@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AeroGuard | BPSU Fire Safety System</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:#0a0e1a;--panel:#111827;--panel2:#1a2235;--border:#1e2d45;
+            --accent:#00c2ff;--accent2:#0072ff;--text:#e2e8f0;
+            --muted:#64748b;--gray:#94a3b8;--green:#22c55e;
+            --yellow:#eab308;--orange:#f97316;--red:#ef4444;
+            --font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+        }
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+
+        /* LOGIN */
+        #login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;}
+        .login-bg-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(0,114,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,114,255,0.04) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
+        .login-glow{position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(0,114,255,0.08) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;}
+        .login-box{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:40px 44px;width:420px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,0.5);animation:fadeIn 0.4s ease;}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(16px);}}
+        .login-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px;}
+        .login-logo-icon{width:46px;height:46px;background:linear-gradient(135deg,var(--accent2),var(--accent));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;}
+        .login-logo-text{font-size:1.4rem;font-weight:700;}
+        .login-logo-sub{font-size:0.7rem;color:var(--muted);font-family:var(--mono);letter-spacing:1.5px;text-transform:uppercase;}
+        .login-title{font-size:1.05rem;font-weight:600;margin-bottom:4px;}
+        .login-subtitle{font-size:0.8rem;color:var(--muted);margin-bottom:28px;}
+        .login-label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;}
+        .login-input{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:0.9rem;font-family:var(--font);outline:none;transition:border-color .15s,box-shadow .15s;margin-bottom:18px;}
+        .login-input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(0,114,255,.12);}
+        .login-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--accent2),var(--accent));color:white;border:none;border-radius:8px;font-size:0.9rem;font-weight:700;cursor:pointer;letter-spacing:.5px;transition:opacity .15s;margin-top:4px;}
+        .login-btn:hover{opacity:.9;}
+        .login-btn:disabled{opacity:.5;cursor:not-allowed;}
+        .login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:.8rem;margin-bottom:16px;display:none;}
+        .login-error.show{display:block;}
+        .login-hint{margin-top:20px;padding-top:18px;border-top:1px solid var(--border);font-size:.72rem;color:var(--muted);}
+        .login-hint strong{color:var(--gray);}
+
+        /* APP SHELL */
+        #app-shell{display:none;flex:1;}
+        #app-shell.visible{display:flex;flex-direction:column;}
+
+        /* SIDEBAR */
+        .sidebar{width:240px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;}
+        .logo{padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+        .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--accent2),var(--accent));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+        .logo-text{font-size:1.1rem;font-weight:700;letter-spacing:.5px;}
+        .logo-sub{font-size:.65rem;color:var(--muted);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;}
+        .nav{padding:12px 0;flex:1;}
+        .nav-section-label{padding:10px 22px 4px;font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--mono);}
+        .nav-item{padding:10px 22px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:.875rem;color:var(--gray);border-left:2px solid transparent;transition:all .15s;user-select:none;}
+        .nav-item:hover{background:var(--panel2);color:var(--text);}
+        .nav-item.active{background:rgba(0,194,255,.08);color:var(--accent);border-left-color:var(--accent);}
+        .nav-item .icon{width:18px;text-align:center;font-size:1rem;}
+        .nav-lock{font-size:.6rem;margin-left:auto;color:var(--muted);}
+        .sidebar-bottom{padding:16px 22px;border-top:1px solid var(--border);}
+        .user-pill{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:8px;}
+        .avatar{width:30px;height:30px;background:linear-gradient(135deg,var(--accent2),var(--accent));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;}
+        .user-name{font-size:.8rem;font-weight:500;}
+        .user-role-text{font-size:.65rem;color:var(--muted);}
+        .logout-btn{margin-top:10px;width:100%;padding:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:6px;color:var(--red);font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s;font-family:var(--font);}
+        .logout-btn:hover{background:rgba(239,68,68,.16);}
+
+        /* MAIN */
+        .main{margin-left:240px;flex:1;display:flex;flex-direction:column;}
+        .topbar{padding:14px 28px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+        .page-title{font-size:1.05rem;font-weight:600;}
+        .page-breadcrumb{font-size:.75rem;color:var(--muted);font-family:var(--mono);}
+        .topbar-right{display:flex;align-items:center;gap:14px;}
+        .status-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite;}
+        @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+        .system-live{font-size:.75rem;color:var(--green);font-family:var(--mono);display:flex;align-items:center;gap:6px;}
+        .timestamp{font-size:.75rem;color:var(--muted);font-family:var(--mono);}
+        .role-chip{font-size:.68rem;padding:3px 10px;border-radius:20px;font-family:var(--mono);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+        .role-chip-admin{background:rgba(0,194,255,.12);color:var(--accent);border:1px solid rgba(0,194,255,.25);}
+        .role-chip-security{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25);}
+        .role-chip-drrm{background:rgba(249,115,22,.12);color:var(--orange);border:1px solid rgba(249,115,22,.25);}
+        .role-chip-campus{background:rgba(148,163,184,.1);color:var(--gray);border:1px solid rgba(148,163,184,.2);}
+        .content{padding:24px 28px;flex:1;}
+
+        /* DB STATUS BAR */
+        .db-status{display:flex;align-items:center;gap:6px;font-size:.72rem;font-family:var(--mono);}
+        .db-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+        .db-dot.connected{background:var(--green);}
+        .db-dot.error{background:var(--red);}
+
+        /* VIEWS */
+        .view{display:none;}
+        .view.active{display:block;}
+
+        /* LIVE BAR */
+        .live-bar{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:.8rem;color:var(--red);}
+        .live-bar.hidden{display:none;}
+
+        /* LOADING OVERLAY */
+        .loading-overlay{position:absolute;inset:0;background:rgba(10,14,26,.6);display:flex;align-items:center;justify-content:center;border-radius:10px;z-index:10;}
+        .spinner{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+        @keyframes spin{to{transform:rotate(360deg);}}
+
+        /* STAT CARDS */
+        .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+        .stat-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px 20px;position:relative;overflow:hidden;}
+        .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);}
+        .stat-card.alert::before{background:var(--red);}
+        .stat-card.warn::before{background:var(--yellow);}
+        .stat-card.ok::before{background:var(--green);}
+        .stat-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;}
+        .stat-value{font-size:2rem;font-weight:700;font-family:var(--mono);}
+        .stat-sub{font-size:.72rem;color:var(--muted);margin-top:4px;}
+
+        /* GRID */
+        .grid-2{display:grid;grid-template-columns:1fr 380px;gap:16px;}
+
+        /* PANEL */
+        .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative;}
+        .panel-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+        .panel-title{font-size:.875rem;font-weight:600;}
+        .panel-badge{font-size:.65rem;padding:2px 8px;border-radius:20px;font-family:var(--mono);background:rgba(0,194,255,.1);color:var(--accent);border:1px solid rgba(0,194,255,.2);}
+
+        /* ROWS */
+        .device-row{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;padding:12px 20px;border-bottom:1px solid var(--border);align-items:center;font-size:.8rem;transition:background .15s;}
+        .device-row:hover{background:var(--panel2);}
+        .device-row:last-child{border-bottom:none;}
+        .device-row.header{color:var(--muted);font-size:.65rem;text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);padding-top:8px;padding-bottom:8px;}
+        .device-name{font-weight:500;}
+        .device-location{color:var(--muted);font-size:.75rem;}
+
+        .users-row{display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1.2fr 1fr;padding:12px 20px;border-bottom:1px solid var(--border);align-items:center;font-size:.8rem;}
+        .users-row:hover{background:var(--panel2);}
+        .users-row:last-child{border-bottom:none;}
+        .users-row.header{color:var(--muted);font-size:.65rem;text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+
+        .incident-row{display:grid;grid-template-columns:1fr 1.5fr 1.5fr 1fr 1fr 1fr;padding:10px 20px;border-bottom:1px solid var(--border);align-items:center;font-size:.78rem;}
+        .incident-row:hover{background:var(--panel2);}
+        .incident-row:last-child{border-bottom:none;}
+        .incident-row.header{color:var(--muted);font-size:.65rem;text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+
+        /* BADGES */
+        .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:4px;font-size:.7rem;font-weight:600;font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;}
+        .badge-online{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25);}
+        .badge-offline{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25);}
+        .badge-maint{background:rgba(234,179,8,.12);color:var(--yellow);border:1px solid rgba(234,179,8,.25);}
+        .threat-gray{background:rgba(148,163,184,.12);color:#94a3b8;border:1px solid rgba(148,163,184,.25);}
+        .threat-yellow{background:rgba(234,179,8,.12);color:var(--yellow);border:1px solid rgba(234,179,8,.3);}
+        .threat-orange{background:rgba(249,115,22,.15);color:var(--orange);border:1px solid rgba(249,115,22,.3);}
+        .threat-red{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.35);animation:blink 1s step-start infinite;}
+        @keyframes blink{50%{opacity:.6;}}
+
+        /* ALERT FEED */
+        .alert-item-new{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;}
+        .alert-item-new:last-child{border-bottom:none;}
+        .alert-dot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;}
+        .alert-dot-gray{background:var(--gray);}
+        .alert-dot-yellow{background:var(--yellow);}
+        .alert-dot-orange{background:var(--orange);}
+        .alert-dot-red{background:var(--red);box-shadow:0 0 6px var(--red);}
+        .alert-body{flex:1;}
+        .alert-level{font-size:.72rem;font-weight:600;font-family:var(--mono);}
+        .alert-loc{font-size:.75rem;color:var(--text);margin:1px 0;}
+        .alert-time{font-size:.68rem;color:var(--muted);font-family:var(--mono);}
+
+        /* PM CARDS */
+        .pm-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 16px;}
+        .pm-card{background:var(--panel2);border-radius:8px;padding:12px 14px;border:1px solid var(--border);}
+        .pm-card-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;}
+        .pm-card-value{font-size:1.4rem;font-weight:700;font-family:var(--mono);}
+        .pm-card-unit{font-size:.65rem;color:var(--muted);}
+
+        /* MODALS */
+        .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:999;align-items:center;justify-content:center;}
+        .modal-overlay.open{display:flex;}
+        .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;width:480px;max-width:95vw;overflow:hidden;animation:slideUp .2s ease;}
+        @keyframes slideUp{from{transform:translateY(20px);opacity:0;}}
+        .modal-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+        .modal-title{font-size:1rem;font-weight:600;}
+        .modal-close{background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px;}
+        .modal-close:hover{color:var(--text);}
+        .modal-body{padding:22px;}
+        .modal-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;}
+
+        /* FORMS */
+        .form-group{margin-bottom:16px;}
+        .form-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;}
+        .form-input,.form-select{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:.85rem;font-family:var(--font);outline:none;transition:border-color .15s;}
+        .form-input:focus,.form-select:focus{border-color:var(--accent);}
+        .form-select option{background:var(--panel2);}
+        .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+        /* BUTTONS */
+        .btn{padding:8px 18px;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:var(--font);letter-spacing:.3px;}
+        .btn:disabled{opacity:.5;cursor:not-allowed;}
+        .btn-primary{background:var(--accent2);color:white;}
+        .btn-primary:hover:not(:disabled){background:#0060e0;}
+        .btn-danger{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);}
+        .btn-danger:hover:not(:disabled){background:rgba(239,68,68,.25);}
+        .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+        .btn-ghost:hover{color:var(--text);border-color:var(--gray);}
+        .btn-sm{padding:5px 12px;font-size:.72rem;}
+
+        /* MISC */
+        .section-title{font-size:1.1rem;font-weight:600;margin-bottom:4px;}
+        .section-sub{font-size:.8rem;color:var(--muted);margin-bottom:20px;}
+        .filter-bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;}
+        .search-input{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px 14px;color:var(--text);font-size:.82rem;outline:none;width:240px;}
+        .search-input:focus{border-color:var(--accent);}
+        .spacer{flex:1;}
+        .scrollable{max-height:340px;overflow-y:auto;}
+        .scrollable::-webkit-scrollbar{width:4px;}
+        .scrollable::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+        .user-avatar-sm{width:28px;height:28px;background:linear-gradient(135deg,var(--accent2),var(--accent));border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-right:8px;flex-shrink:0;}
+        .role-admin{color:var(--accent);font-weight:600;}
+        .role-security{color:var(--green);font-weight:600;}
+        .role-drrm{color:var(--orange);font-weight:600;}
+        .role-campus{color:var(--muted);font-weight:600;}
+        .actions-row{display:flex;gap:6px;align-items:center;}
+        .action-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:3px 6px;border-radius:4px;transition:all .1s;}
+        .action-btn:hover{background:var(--panel2);color:var(--text);}
+        .action-btn.del:hover{color:var(--red);}
+
+        /* EMPTY STATE */
+        .empty-state{padding:40px 20px;text-align:center;color:var(--muted);font-size:.85rem;}
+
+        /* TOAST */
+        .toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+        .toast{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:.8rem;min-width:280px;display:flex;align-items:center;gap:10px;animation:toastIn .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+        @keyframes toastIn{from{transform:translateX(100%);opacity:0;}}
+        .toast-title{font-weight:600;}
+        .toast-sub{color:var(--muted);font-size:.72rem;}
+    </style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══════════════════════════════════════════════════ -->
+<div id="login-screen">
+    <div class="login-bg-grid"></div>
+    <div class="login-glow"></div>
+    <div class="login-box">
+        <div class="login-logo">
+            <div class="login-logo-icon">🛡️</div>
+            <div>
+                <div class="login-logo-text">AeroGuard</div>
+                <div class="login-logo-sub">BPSU Fire Safety System</div>
+            </div>
+        </div>
+        <div class="login-title">Sign in to continue</div>
+        <div class="login-subtitle">Authorized personnel only — BPSU Main Campus</div>
+        <div class="login-error" id="login-error">⚠️ &nbsp;<span id="login-error-text">Incorrect username or password.</span></div>
+        <label class="login-label">Username</label>
+        <input class="login-input" id="login-username" type="text" placeholder="Enter your username" autocomplete="off"/>
+        <label class="login-label">Password</label>
+        <input class="login-input" id="login-password" type="password" placeholder="Enter your password"/>
+        <button class="login-btn" id="login-btn" onclick="doLogin()">Sign In</button>
+        <div class="login-hint">
+        </div>
+    </div>
+</div>
+
+<!-- ══ APP SHELL ══════════════════════════════════════════════ -->
+<div id="app-shell">
+    <div class="sidebar">
+        <div class="logo">
+            <div class="logo-icon">🛡️</div>
+            <div><div class="logo-text">AeroGuard</div><div class="logo-sub">BPSU Fire Safety</div></div>
+        </div>
+        <nav class="nav">
+            <div class="nav-section-label">Monitor</div>
+            <div class="nav-item active" data-view="dashboard" onclick="switchView('dashboard',this)"><span class="icon">📊</span> Dashboard</div>
+            <div class="nav-item" data-view="incidents" onclick="switchView('incidents',this)"><span class="icon">🔔</span> Incident Log</div>
+            <div class="nav-section-label" style="margin-top:8px;">Manage</div>
+            <div class="nav-item" data-view="users" onclick="guardedView('users',this)"><span class="icon">👥</span> User Accounts<span class="nav-lock" id="lock-users">🔒</span></div>
+            <div class="nav-item" data-view="devices" onclick="guardedView('devices',this)"><span class="icon">📡</span> Devices<span class="nav-lock" id="lock-devices">🔒</span></div>
+            <div class="nav-item" data-view="equipment" onclick="guardedView('equipment',this)"><span class="icon">🧯</span> Fire Equipment<span class="nav-lock" id="lock-equipment">🔒</span></div>
+        </nav>
+        <div class="sidebar-bottom">
+            <div class="user-pill">
+                <div class="avatar" id="nav-avatar">A</div>
+                <div><div class="user-name" id="nav-username">—</div><div class="user-role-text" id="nav-role">—</div></div>
+            </div>
+            <button class="logout-btn" onclick="confirmLogout()">🚪 &nbsp;Sign Out</button>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="page-title" id="page-title">System Dashboard</div>
+                <div class="page-breadcrumb" id="page-breadcrumb">AeroGuard / Dashboard</div>
+            </div>
+            <div class="topbar-right">
+                <div class="db-status"><div class="db-dot" id="db-dot"></div><span id="db-status-text" style="font-size:.72rem;font-family:var(--mono);color:var(--muted)">Connecting...</span></div>
+                <span class="role-chip" id="topbar-role-chip"></span>
+                <div class="system-live"><div class="status-dot"></div> SYSTEM LIVE</div>
+                <div class="timestamp" id="live-clock">--:--:--</div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="live-bar hidden" id="alert-bar">🚨 &nbsp;<strong>CRITICAL ALERT:</strong>&nbsp; Red level detected — <span id="alert-bar-text"></span>. Evacuation protocols active.</div>
+
+            <!-- DASHBOARD -->
+            <div class="view active" id="view-dashboard">
+                <div class="stats-row">
+                    <div class="stat-card"><div class="stat-label">Total Devices</div><div class="stat-value" id="stat-total">—</div><div class="stat-sub">Registered units</div></div>
+                    <div class="stat-card ok"><div class="stat-label">Online</div><div class="stat-value" style="color:var(--green)" id="stat-online">—</div><div class="stat-sub">Active monitoring</div></div>
+                    <div class="stat-card warn"><div class="stat-label">Active Alerts</div><div class="stat-value" style="color:var(--yellow)" id="stat-alerts">—</div><div class="stat-sub">Needs attention</div></div>
+                    <div class="stat-card alert"><div class="stat-label">Incidents Today</div><div class="stat-value" style="color:var(--red)" id="stat-incidents">—</div><div class="stat-sub">Last 24 hours</div></div>
+                </div>
+                <div class="grid-2">
+                    <div class="panel">
+                        <div class="panel-header"><div class="panel-title">Smoke Detector Status</div><span class="panel-badge">LIVE</span></div>
+                        <div class="device-row header"><span>Device</span><span>Location</span><span>Status</span><span>Threat</span><span>PM2.5</span></div>
+                        <div id="dash-device-list" class="scrollable"></div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:16px;">
+                        <div class="panel">
+                            <div class="panel-header"><div class="panel-title">Recent Alerts</div></div>
+                            <div id="dash-alerts" class="scrollable" style="max-height:220px;"></div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header"><div class="panel-title">Live Sensor Readings</div><span style="font-size:.65rem;color:var(--muted);font-family:var(--mono)">Updates every 8s</span></div>
+                            <div class="pm-cards" id="dash-pm-cards"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INCIDENTS -->
+            <div class="view" id="view-incidents">
+                <div class="section-title">Incident Log</div>
+                <div class="filter-bar">
+                    <select class="form-select" style="width:160px" onchange="filterIncidentsByLevel(this.value)">
+                        <option value="">All Levels</option>
+                        <option value="Gray">Gray</option><option value="Yellow">Yellow</option>
+                        <option value="Orange">Orange</option><option value="Red">Red</option>
+                    </select>
+                    <div class="spacer"></div>
+                    <button class="btn btn-ghost btn-sm" onclick="exportIncidents()">⬇ Export CSV</button>
+                </div>
+                <div class="panel">
+                    <div class="incident-row header"><span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span></div>
+                    <div id="incidents-list"></div>
+                </div>
+            </div>
+
+            <!-- USERS -->
+            <div class="view" id="view-users">
+                <div class="section-title">User Account Maintenance</div>
+
+                <div class="filter-bar">
+                    <input class="search-input" placeholder="🔍  Search users..." oninput="filterUsers(this.value)"/>
+                    <select class="form-select" style="width:160px" onchange="filterUsersByRole(this.value)">
+                        <option value="">All Roles</option>
+                        <option value="Admin">Admin</option><option value="Security">Security Personnel</option>
+                        <option value="DRRM">DRRM</option><option value="Campus Personnel">Campus Personnel</option>
+                    </select>
+                    <div class="spacer"></div>
+                    <button class="btn btn-primary" onclick="openAddUser()">+ Add User</button>
+                </div>
+                <div class="panel">
+                    <div class="users-row header"><span>Name / Username</span><span>Role</span><span>Email</span><span>Phone</span><span>Actions</span></div>
+                    <div id="users-list"></div>
+                </div>
+            </div>
+
+            <!-- DEVICES -->
+            <div class="view" id="view-devices">
+                <div class="section-title">Device Management</div>
+                <div class="filter-bar">
+                    <input class="search-input" placeholder="🔍  Search devices..." oninput="filterDevices(this.value)"/>
+                    <div class="spacer"></div>
+                    <button class="btn btn-primary" onclick="openAddDevice()">+ Add Device</button>
+                </div>
+                <div class="panel">
+                    <div class="device-row header" style="grid-template-columns:2fr 2fr 1fr 1fr 1fr;"><span>Device ID / Name</span><span>Building / Location</span><span>Status</span><span>Threat</span><span>Actions</span></div>
+                    <div id="devices-list"></div>
+                </div>
+            </div>
+
+            <!-- EQUIPMENT -->
+            <div class="view" id="view-equipment">
+                <div class="section-title">Fire Equipment</div>
+                <div class="filter-bar">
+                    <div class="spacer"></div>
+                    <button class="btn btn-primary" onclick="openAddEquipment()">+ Add Equipment</button>
+                </div>
+                <div class="panel">
+                    <div class="device-row header" style="grid-template-columns:1fr 1.5fr 1.5fr 1fr 1fr;"><span>Type</span><span>Building</span><span>Location</span><span>Last Inspection</span><span>Status</span></div>
+                    <div id="equipment-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MODALS ═════════════════════════════════════════════════ -->
+
+<!-- USER MODAL -->
+<div class="modal-overlay" id="modal-user">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="user-modal-title">Add User Account</div>
+            <button class="modal-close" onclick="closeModal('modal-user')">✕</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-user-id" value="">
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="user-fullname" placeholder="e.g. Juan Dela Cruz"></div>
+                <div class="form-group"><label class="form-label">Username</label><input class="form-input" id="user-username" placeholder="e.g. jdelacruz"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Role</label>
+                    <select class="form-select" id="user-role">
+                        <option value="Admin">Admin</option>
+                        <option value="Security">Security Personnel</option>
+                        <option value="DRRM">DRRM</option>
+                        <option value="Campus Personnel">Campus Personnel</option>
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Password <span id="pass-hint" style="color:var(--muted);text-transform:none;font-size:.65rem">(leave blank to keep)</span></label><input class="form-input" id="user-password" type="password" placeholder="••••••••"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="user-email" placeholder="email@bpsu.edu.ph"></div>
+                <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="user-phone" placeholder="09XXXXXXXXX"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modal-user')">Cancel</button>
+            <button class="btn btn-primary" id="save-user-btn" onclick="saveUser()">Save Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- DEVICE MODAL -->
+<div class="modal-overlay" id="modal-device">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="device-modal-title">Add AeroGuard Device</div>
+            <button class="modal-close" onclick="closeModal('modal-device')">✕</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-device-id" value="">
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Device ID</label><input class="form-input" id="dev-id" placeholder="e.g. AG-009"></div>
+                <div class="form-group"><label class="form-label">Device Name</label><input class="form-input" id="dev-name" placeholder="AeroGuard Unit 9"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Building</label>
+                <select class="form-select" id="dev-building">
+                    <option value="Medina Lacson Building">Medina Lacson Building</option>
+                    <option value="New CEA Building">New CEA (College of Engineering and Architecture) Building</option>
+                    <option value="CAHS Building">CAHS (College of Allied Health Sciences) Building</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Floor</label>
+                    <select class="form-select" id="dev-floor"><option value="1F">1F</option><option value="2F">2F</option></select>
+                </div>
+                <div class="form-group"><label class="form-label">Room</label>
+                    <select class="form-select" id="dev-room">
+                        <option>Room 101</option><option>Room 102</option><option>Room 103</option><option>Room 104</option><option>Room 105</option>
+                        <option>Room 201</option><option>Room 202</option><option>Room 203</option><option>Room 204</option><option>Room 205</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group"><label class="form-label">Status</label>
+                <select class="form-select" id="dev-status"><option value="Online">Online</option><option value="Offline">Offline</option><option value="Maintenance">Maintenance</option></select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modal-device')">Cancel</button>
+            <button class="btn btn-primary" id="save-device-btn" onclick="saveDevice()">Save Device</button>
+        </div>
+    </div>
+</div>
+
+<!-- EQUIPMENT MODAL -->
+<div class="modal-overlay" id="modal-equipment">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Add Fire Equipment</div>
+            <button class="modal-close" onclick="closeModal('modal-equipment')">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Equipment Type</label>
+                    <select class="form-select" id="equip-type"><option value="ABC">ABC Dry Chemical</option><option value="CO2">CO2</option><option value="Water">Water</option><option value="Foam">Foam</option></select>
+                </div>
+                <div class="form-group"><label class="form-label">Building</label>
+                    <select class="form-select" id="equip-building">
+                        <option value="Medina Lacson Building">Medina Lacson Building</option>
+                        <option value="New CEA Building">New CEA Building</option>
+                        <option value="CAHS Building">CAHS Building</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Floor</label><select class="form-select" id="equip-floor"><option value="1F">1F</option><option value="2F">2F</option></select></div>
+                <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="equip-status"><option value="Active">Active</option><option value="Maintenance">Maintenance</option><option value="Expired">Expired</option></select></div>
+            </div>
+            <div class="form-group"><label class="form-label">Location Description</label><input class="form-input" id="equip-location" placeholder="e.g. Hallway near Room 201"></div>
+            <div class="form-group"><label class="form-label">Last Inspection Date</label><input class="form-input" id="equip-inspection" type="date"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modal-equipment')">Cancel</button>
+            <button class="btn btn-primary" id="save-equip-btn" onclick="saveEquipment()">Save Equipment</button>
+        </div>
+    </div>
+</div>
+
+<!-- DELETE CONFIRM -->
+<div class="modal-overlay" id="modal-confirm">
+    <div class="modal" style="width:360px">
+        <div class="modal-header"><div class="modal-title">Confirm Delete</div><button class="modal-close" onclick="closeModal('modal-confirm')">✕</button></div>
+        <div class="modal-body"><p style="color:var(--gray);font-size:.875rem" id="confirm-text">Are you sure?</p></div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modal-confirm')">Cancel</button>
+            <button class="btn btn-danger" id="confirm-delete-btn" onclick="confirmDelete()">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- LOGOUT CONFIRM -->
+<div class="modal-overlay" id="modal-logout">
+    <div class="modal" style="width:360px">
+        <div class="modal-header"><div class="modal-title">Sign Out</div><button class="modal-close" onclick="closeModal('modal-logout')">✕</button></div>
+        <div class="modal-body"><p style="color:var(--gray);font-size:.875rem">Are you sure you want to sign out of AeroGuard?</p></div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modal-logout')">Cancel</button>
+            <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
+        </div>
+    </div>
+</div>
+
+<!-- ACCESS DENIED -->
+<div class="modal-overlay" id="modal-access-denied">
+    <div class="modal" style="width:380px">
+        <div class="modal-header"><div class="modal-title">Access Restricted</div><button class="modal-close" onclick="closeModal('modal-access-denied')">✕</button></div>
+        <div class="modal-body" style="text-align:center;padding:32px 22px;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">🔒</div>
+            <div style="font-size:1rem;font-weight:600;margin-bottom:8px;">Admin Access Only</div>
+            <p style="color:var(--muted);font-size:.85rem;">This section is only available to <strong style="color:var(--accent)">Admin</strong> accounts. Contact your system administrator.</p>
+        </div>
+        <div class="modal-footer" style="justify-content:center;"><button class="btn btn-ghost" onclick="closeModal('modal-access-denied')">Go Back</button></div>
+    </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURATION — point to your XAMPP server
+// ═══════════════════════════════════════════════════════════════
+const API = 'http://localhost/aeroguard/api';
+
+// ═══════════════════════════════════════════════════════════════
+// SESSION
+// ═══════════════════════════════════════════════════════════════
+let currentUser = null;
+let allUsers     = [];
+let allDevices   = [];
+let allIncidents = [];
+let allEquipment = [];
+
+const isAdmin = () => currentUser?.user_type === 'Admin';
+
+// ═══════════════════════════════════════════════════════════════
+// API HELPER — wraps fetch with error handling
+// ═══════════════════════════════════════════════════════════════
+async function api(endpoint, method = 'GET', body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    try {
+        const res  = await fetch(`${API}/${endpoint}`, opts);
+        const data = await res.json();
+        return data;
+    } catch (e) {
+        setDbStatus(false);
+        return { success: false, message: 'Cannot reach server. Is XAMPP running?' };
+    }
+}
+
+function setDbStatus(ok) {
+    const dot  = document.getElementById('db-dot');
+    const text = document.getElementById('db-status-text');
+    if (ok) { dot.className = 'db-dot connected'; text.textContent = 'DB Connected'; text.style.color = 'var(--green)'; }
+    else     { dot.className = 'db-dot error';     text.textContent = 'DB Offline';   text.style.color = 'var(--red)'; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════════════════════
+async function doLogin() {
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl    = document.getElementById('login-error');
+    const btn      = document.getElementById('login-btn');
+
+    if (!username || !password) {
+        document.getElementById('login-error-text').textContent = 'Please enter both username and password.';
+        errEl.classList.add('show'); return;
+    }
+
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    errEl.classList.remove('show');
+
+    const res = await api('auth.php', 'POST', { action: 'login', username, password });
+
+    btn.disabled = false; btn.textContent = 'Sign In';
+
+    if (!res.success) {
+        document.getElementById('login-error-text').textContent = res.message || 'Incorrect username or password.';
+        errEl.classList.add('show');
+        document.getElementById('login-password').value = '';
+        setDbStatus(res.message && res.message.includes('reach') ? false : true);
+        return;
+    }
+
+    setDbStatus(true);
+    currentUser = res.user;
+    showApp();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin();
+});
+
+function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-shell').classList.add('visible');
+
+    document.getElementById('nav-avatar').textContent   = initials(currentUser.full_name);
+    document.getElementById('nav-username').textContent = currentUser.full_name;
+    document.getElementById('nav-role').textContent     = currentUser.user_type;
+
+    const chipCls = { Admin:'role-chip-admin', Security:'role-chip-security', DRRM:'role-chip-drrm', 'Campus Personnel':'role-chip-campus' };
+    const chip = document.getElementById('topbar-role-chip');
+    chip.className   = `role-chip ${chipCls[currentUser.user_type] || 'role-chip-campus'}`;
+    chip.textContent = currentUser.user_type;
+
+    ['lock-users','lock-devices','lock-equipment'].forEach(id => {
+        document.getElementById(id).style.display = isAdmin() ? 'none' : 'inline';
+    });
+
+    startLiveClock();
+    loadDashboard();
+    startLiveReadings();
+    showToast('success', `Welcome, ${currentUser.full_name}`, `Signed in as ${currentUser.user_type}`);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LOGOUT
+// ═══════════════════════════════════════════════════════════════
+function confirmLogout() { document.getElementById('modal-logout').classList.add('open'); }
+
+function doLogout() {
+    closeModal('modal-logout');
+    currentUser = null; allUsers = []; allDevices = []; allIncidents = []; allEquipment = [];
+
+    document.getElementById('login-username').value = '';
+    document.getElementById('login-password').value = '';
+    document.getElementById('login-error').classList.remove('show');
+
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelector('[data-view="dashboard"]').classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-dashboard').classList.add('active');
+    document.getElementById('page-title').textContent      = 'System Dashboard';
+    document.getElementById('page-breadcrumb').textContent = 'AeroGuard / Dashboard';
+
+    document.getElementById('app-shell').classList.remove('visible');
+    document.getElementById('login-screen').style.display = 'flex';
+    showToast('info', 'Signed Out', 'You have been logged out.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+const pageTitles = {
+    dashboard: ['System Dashboard','AeroGuard / Dashboard'],
+    users:     ['User Account Maintenance','AeroGuard / Manage / Users'],
+    devices:   ['Device Management','AeroGuard / Manage / Devices'],
+    incidents: ['Incident Log','AeroGuard / Monitor / Incidents'],
+    equipment: ['Fire Equipment','AeroGuard / Manage / Equipment'],
+};
+
+function switchView(view, el) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    if (el) el.classList.add('active');
+    document.getElementById('page-title').textContent      = pageTitles[view][0];
+    document.getElementById('page-breadcrumb').textContent = pageTitles[view][1];
+
+    if (view === 'dashboard') loadDashboard();
+    if (view === 'users')     loadUsers();
+    if (view === 'devices')   loadDevices();
+    if (view === 'incidents') loadIncidents();
+    if (view === 'equipment') loadEquipment();
+}
+
+function guardedView(view, el) {
+    if (!isAdmin()) { document.getElementById('modal-access-denied').classList.add('open'); return; }
+    switchView(view, el);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const initials = n => n.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
+
+function threatBadge(l) {
+    const c = {Gray:'threat-gray',Yellow:'threat-yellow',Orange:'threat-orange',Red:'threat-red'};
+    const i = {Gray:'⬜',Yellow:'🟡',Orange:'🟠',Red:'🔴'};
+    return `<span class="badge ${c[l]||'threat-gray'}">${i[l]||''} ${l||'Gray'}</span>`;
+}
+function statusBadge(s) {
+    if (s==='Online')  return `<span class="badge badge-online">● Online</span>`;
+    if (s==='Offline') return `<span class="badge badge-offline">○ Offline</span>`;
+    return `<span class="badge badge-maint">◑ Maint</span>`;
+}
+function roleBadge(r) {
+    const c = {Admin:'role-admin',Security:'role-security',DRRM:'role-drrm','Campus Personnel':'role-campus'};
+    return `<span class="${c[r]||''}">${r}</span>`;
+}
+function formatTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-PH',{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});
+}
+function timeAgo(ts) {
+    const s = (Date.now() - new Date(ts)) / 1000;
+    if (s < 60)   return `${Math.floor(s)}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    return `${Math.floor(s/3600)}h ago`;
+}
+function pmColor(v) {
+    if (v < 35)  return 'var(--green)';
+    if (v < 150) return 'var(--yellow)';
+    if (v < 300) return 'var(--orange)';
+    return 'var(--red)';
+}
+function setLoading(panelEl, on) {
+    const existing = panelEl.querySelector('.loading-overlay');
+    if (on && !existing) {
+        const div = document.createElement('div'); div.className = 'loading-overlay';
+        div.innerHTML = '<div class="spinner"></div>';
+        panelEl.style.position = 'relative'; panelEl.appendChild(div);
+    } else if (!on && existing) { existing.remove(); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DASHBOARD  — loads from DB
+// ═══════════════════════════════════════════════════════════════
+
+// Simulated PM2.5 overlay (devices table doesn't have live pm25, so we simulate on top of real device list)
+let pmOverlay = {};
+
+async function loadDashboard() {
+    // Devices from DB
+    const devRes = await api('devices.php');
+    if (devRes.success) { allDevices = devRes.data; setDbStatus(true); }
+
+    // Incidents from DB
+    const incRes = await api('incidents.php');
+    if (incRes.success) allIncidents = incRes.data;
+
+    renderDashboard();
+}
+
+function renderDashboard() {
+    const online   = allDevices.filter(d => d.status === 'Online').length;
+    const todayInc = allIncidents.filter(i => new Date(i.created_at) > new Date(Date.now()-86400000)).length;
+
+    // Count devices that have a non-Gray recent incident (simplified alert count)
+    const alertDevices = new Set(
+        allIncidents.filter(i => i.threat_level !== 'Gray' && i.resolved == 0).map(i => i.device_id)
+    );
+
+    document.getElementById('stat-total').textContent    = allDevices.length;
+    document.getElementById('stat-online').textContent   = online;
+    document.getElementById('stat-alerts').textContent   = alertDevices.size;
+    document.getElementById('stat-incidents').textContent= todayInc;
+
+    // Device table — merge with simulated PM
+    document.getElementById('dash-device-list').innerHTML = allDevices.length
+        ? allDevices.map(d => {
+            const pm = pmOverlay[d.device_id] ?? (d.status === 'Online' ? 12.5 : 0);
+            const latestInc = allIncidents.find(i => i.device_id === d.device_id);
+            const threat = latestInc ? latestInc.threat_level : 'Gray';
+            return `<div class="device-row">
+                <div><div class="device-name">${d.device_id}</div><div class="device-location">${d.device_name}</div></div>
+                <div><div style="font-size:.8rem">${d.building}</div><div class="device-location">${d.floor} · ${d.room}</div></div>
+                <div>${statusBadge(d.status)}</div>
+                <div>${threatBadge(threat)}</div>
+                <div style="font-family:var(--mono);font-size:.78rem;color:${pmColor(pm)}">
+                    ${d.status==='Online' ? pm.toFixed(1)+' µg/m³' : '—'}
+                </div>
+            </div>`;
+        }).join('')
+        : '<div class="empty-state">No devices registered yet.</div>';
+
+    // Alert feed from real incidents
+    const dotCls = {Gray:'alert-dot-gray',Yellow:'alert-dot-yellow',Orange:'alert-dot-orange',Red:'alert-dot-red'};
+    document.getElementById('dash-alerts').innerHTML = allIncidents.slice(0,6).map(i => `
+        <div class="alert-item-new">
+            <div class="alert-dot ${dotCls[i.threat_level]||'alert-dot-gray'}"></div>
+            <div class="alert-body">
+                <div class="alert-level" style="color:${i.threat_level==='Red'?'var(--red)':i.threat_level==='Orange'?'var(--orange)':i.threat_level==='Yellow'?'var(--yellow)':'var(--muted)'}">${i.threat_level} Level — ${i.device_id}</div>
+                <div class="alert-loc">${i.location}</div>
+                <div class="alert-time">${timeAgo(i.created_at)} · PM2.5: ${i.pm25_value} µg/m³</div>
+            </div>
+        </div>`).join('') || '<div style="padding:16px;color:var(--muted);font-size:.8rem">No recent alerts</div>';
+
+    // PM cards
+    document.getElementById('dash-pm-cards').innerHTML = allDevices.filter(d=>d.status==='Online').slice(0,4).map(d => {
+        const pm = pmOverlay[d.device_id] ?? 12.5;
+        return `<div class="pm-card">
+            <div class="pm-card-label">${d.device_id}</div>
+            <div class="pm-card-value" style="color:${pmColor(pm)}">${pm.toFixed(1)}</div>
+            <div class="pm-card-unit">µg/m³ PM2.5 · ${d.building.split(' ')[0]}</div>
+        </div>`;
+    }).join('');
+
+    // Red alert bar
+    const redInc = allIncidents.find(i => i.threat_level === 'Red' && i.resolved == 0);
+    const bar = document.getElementById('alert-bar');
+    redInc ? (bar.classList.remove('hidden'), document.getElementById('alert-bar-text').textContent = redInc.location)
+           : bar.classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// USERS — full DB CRUD
+// ═══════════════════════════════════════════════════════════════
+async function loadUsers(filter = '') {
+    const panel = document.querySelector('#view-users .panel');
+    setLoading(panel, true);
+    const res = await api('users.php');
+    setLoading(panel, false);
+    if (!res.success) { showToast('error','DB Error', res.message); return; }
+    allUsers = res.data;
+    setDbStatus(true);
+    renderUsers(filter);
+}
+
+function renderUsers(filter = '') {
+    const role = document.querySelector('#view-users select')?.value || '';
+    const q    = filter.toLowerCase();
+    const arr  = allUsers.filter(u =>
+        (!q || u.full_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)) &&
+        (!role || u.user_type === role)
+    );
+    document.getElementById('users-list').innerHTML = arr.length
+        ? arr.map(u => `
+            <div class="users-row">
+                <div style="display:flex;align-items:center">
+                    <div class="user-avatar-sm">${initials(u.full_name)}</div>
+                    <div><div style="font-weight:500">${u.full_name}</div>
+                         <div style="color:var(--muted);font-size:.72rem;font-family:var(--mono)">@${u.username}</div></div>
+                </div>
+                <div>${roleBadge(u.user_type)}</div>
+                <div style="color:var(--muted)">${u.email||'—'}</div>
+                <div style="font-family:var(--mono);font-size:.75rem">${u.phone||'—'}</div>
+                <div class="actions-row">
+                    <button class="action-btn" onclick="editUser('${u.user_id}')" title="Edit">✏️</button>
+                    <button class="action-btn del" onclick="deleteRecord('user','${u.user_id}','${u.full_name}')" title="Delete">🗑</button>
+                </div>
+            </div>`).join('')
+        : '<div class="empty-state">No users found.</div>';
+}
+
+function filterUsers(q)         { renderUsers(q); }
+function filterUsersByRole(r)   { renderUsers(document.querySelector('#view-users .search-input')?.value || ''); }
+
+function openAddUser() {
+    document.getElementById('edit-user-id').value = '';
+    document.getElementById('user-modal-title').textContent = 'Add User Account';
+    document.getElementById('pass-hint').style.display = 'none';
+    ['user-fullname','user-username','user-email','user-phone','user-password'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('user-role').value = 'Security';
+    document.getElementById('modal-user').classList.add('open');
+}
+
+function editUser(userId) {
+    const u = allUsers.find(u => u.user_id == userId);
+    if (!u) return;
+    document.getElementById('edit-user-id').value  = userId;
+    document.getElementById('user-modal-title').textContent = 'Edit User Account';
+    document.getElementById('pass-hint').style.display = 'inline';
+    document.getElementById('user-fullname').value = u.full_name;
+    document.getElementById('user-username').value  = u.username;
+    document.getElementById('user-role').value      = u.user_type;
+    document.getElementById('user-email').value     = u.email || '';
+    document.getElementById('user-phone').value     = u.phone || '';
+    document.getElementById('user-password').value  = '';
+    document.getElementById('modal-user').classList.add('open');
+}
+
+async function saveUser() {
+    const userId   = document.getElementById('edit-user-id').value;
+    const fullname = document.getElementById('user-fullname').value.trim();
+    const username = document.getElementById('user-username').value.trim();
+    const password = document.getElementById('user-password').value;
+    const role     = document.getElementById('user-role').value;
+    const email    = document.getElementById('user-email').value.trim();
+    const phone    = document.getElementById('user-phone').value.trim();
+
+    if (!fullname || !username) { showToast('error','Required','Full name and username are required.'); return; }
+    if (!userId && !password)   { showToast('error','Required','Password is required for new users.'); return; }
+
+    const btn = document.getElementById('save-user-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    const payload = { full_name: fullname, username, user_type: role, email, phone };
+    if (password) payload.password = password;
+
+    let res;
+    if (userId) {
+        payload.user_id = userId;
+        res = await api('users.php', 'PUT', payload);
+    } else {
+        res = await api('users.php', 'POST', payload);
+    }
+
+    btn.disabled = false; btn.textContent = 'Save Account';
+
+    if (!res.success) { showToast('error', 'Error', res.message); return; }
+
+    closeModal('modal-user');
+    showToast('success', userId ? 'User Updated' : 'User Added', `${fullname} saved to database.`);
+    loadUsers();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEVICES — full DB CRUD
+// ═══════════════════════════════════════════════════════════════
+async function loadDevices(filter = '') {
+    const panel = document.querySelector('#view-devices .panel');
+    setLoading(panel, true);
+    const res = await api('devices.php');
+    setLoading(panel, false);
+    if (!res.success) { showToast('error','DB Error', res.message); return; }
+    allDevices = res.data;
+    setDbStatus(true);
+    renderDeviceList(filter);
+}
+
+function renderDeviceList(filter = '') {
+    const q   = filter.toLowerCase();
+    const arr = allDevices.filter(d => !q || d.device_id.toLowerCase().includes(q) || d.building.toLowerCase().includes(q) || d.room.toLowerCase().includes(q));
+    document.getElementById('devices-list').innerHTML = arr.length
+        ? arr.map(d => `
+            <div class="device-row" style="grid-template-columns:2fr 2fr 1fr 1fr 1fr">
+                <div><div class="device-name">${d.device_id}</div><div class="device-location">${d.device_name}</div></div>
+                <div><div style="font-size:.8rem">${d.building}</div><div class="device-location">${d.floor} · ${d.room}</div></div>
+                <div>${statusBadge(d.status)}</div>
+                <div>${threatBadge(allIncidents.find(i=>i.device_id===d.device_id)?.threat_level || 'Gray')}</div>
+                <div class="actions-row">
+                    <button class="action-btn" onclick="editDevice('${d.device_id}')" title="Edit">✏️</button>
+                    <button class="action-btn del" onclick="deleteRecord('device','${d.device_id}','${d.device_id}')" title="Delete">🗑</button>
+                </div>
+            </div>`).join('')
+        : '<div class="empty-state">No devices found.</div>';
+}
+
+function filterDevices(q) { renderDeviceList(q); }
+
+function openAddDevice() {
+    document.getElementById('edit-device-id').value = '';
+    document.getElementById('device-modal-title').textContent = 'Add AeroGuard Device';
+    ['dev-id','dev-name'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('dev-id').disabled = false;
+    document.getElementById('dev-status').value = 'Online';
+    document.getElementById('modal-device').classList.add('open');
+}
+
+function editDevice(devId) {
+    const d = allDevices.find(d => d.device_id === devId);
+    if (!d) return;
+    document.getElementById('edit-device-id').value         = devId;
+    document.getElementById('device-modal-title').textContent = 'Edit Device';
+    document.getElementById('dev-id').value                 = d.device_id;
+    document.getElementById('dev-id').disabled              = true; // can't change PK
+    document.getElementById('dev-name').value               = d.device_name;
+    document.getElementById('dev-building').value           = d.building;
+    document.getElementById('dev-floor').value              = d.floor;
+    document.getElementById('dev-room').value               = d.room;
+    document.getElementById('dev-status').value             = d.status;
+    document.getElementById('modal-device').classList.add('open');
+}
+
+async function saveDevice() {
+    const originalId = document.getElementById('edit-device-id').value;
+    const id   = document.getElementById('dev-id').value.trim().toUpperCase();
+    const name = document.getElementById('dev-name').value.trim();
+    if (!id || !name) { showToast('error','Required','Device ID and name are required.'); return; }
+
+    const btn = document.getElementById('save-device-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    const payload = { device_id: id, device_name: name, building: document.getElementById('dev-building').value, floor: document.getElementById('dev-floor').value, room: document.getElementById('dev-room').value, status: document.getElementById('dev-status').value };
+
+    const res = await api('devices.php', originalId ? 'PUT' : 'POST', payload);
+    btn.disabled = false; btn.textContent = 'Save Device';
+
+    if (!res.success) { showToast('error','Error', res.message); return; }
+    closeModal('modal-device');
+    showToast('success', originalId ? 'Device Updated' : 'Device Added', `${id} saved to database.`);
+    loadDevices();
+    loadDashboard();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INCIDENTS — load from DB, filter, export
+// ═══════════════════════════════════════════════════════════════
+async function loadIncidents(level = '') {
+    const panel = document.querySelector('#view-incidents .panel');
+    setLoading(panel, true);
+    const endpoint = level ? `incidents.php?level=${level}` : 'incidents.php';
+    const res = await api(endpoint);
+    setLoading(panel, false);
+    if (!res.success) { showToast('error','DB Error', res.message); return; }
+    allIncidents = res.data;
+    setDbStatus(true);
+    renderIncidents();
+}
+
+function renderIncidents() {
+    document.getElementById('incidents-list').innerHTML = allIncidents.length
+        ? allIncidents.map(i => `
+            <div class="incident-row">
+                <div style="font-family:var(--mono);font-size:.72rem">${formatTime(i.created_at)}</div>
+                <div>${i.device_id}</div>
+                <div style="color:var(--muted)">${i.location}</div>
+                <div>${threatBadge(i.threat_level)}</div>
+                <div style="font-family:var(--mono);color:${pmColor(i.pm25_value)}">${i.pm25_value} µg/m³</div>
+                <div><span class="badge ${i.resolved==1?'badge-online':'badge-maint'}">${i.resolved==1?'Resolved':'Active'}</span></div>
+            </div>`).join('')
+        : '<div class="empty-state">No incidents found.</div>';
+}
+
+function filterIncidentsByLevel(level) { loadIncidents(level); }
+
+function exportIncidents() {
+    const rows = ['Time,Device,Location,Level,PM2.5,Status',
+        ...allIncidents.map(i => `"${formatTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved==1?'Resolved':'Active'}"`)
+    ];
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})), download:'aeroguard_incidents.csv' });
+    a.click();
+    showToast('success','Export Ready','Incident log downloaded as CSV.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EQUIPMENT — load from DB
+// ═══════════════════════════════════════════════════════════════
+async function loadEquipment() {
+    const panel = document.querySelector('#view-equipment .panel');
+    setLoading(panel, true);
+    const res = await api('equipment.php');
+    setLoading(panel, false);
+    if (!res.success) { showToast('error','DB Error', res.message); return; }
+    allEquipment = res.data;
+    setDbStatus(true);
+    renderEquipment();
+}
+
+function renderEquipment() {
+    document.getElementById('equipment-list').innerHTML = allEquipment.length
+        ? allEquipment.map(e => `
+            <div class="device-row" style="grid-template-columns:1fr 1.5fr 1.5fr 1fr 1fr;">
+                <div style="font-weight:600">${e.equipment_type} <span style="font-size:.7rem;color:var(--muted)">Extinguisher</span></div>
+                <div>${e.building}</div>
+                <div style="color:var(--muted)">${e.floor} · ${e.location_description||'—'}</div>
+                <div style="font-family:var(--mono);font-size:.75rem;color:var(--muted)">${e.last_inspection||'—'}</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    ${statusBadge(e.status)}
+                    <button class="action-btn del" onclick="deleteRecord('equipment','${e.equipment_id}','${e.equipment_type} extinguisher')" title="Delete">🗑</button>
+                </div>
+            </div>`).join('')
+        : '<div class="empty-state">No equipment registered.</div>';
+}
+
+function openAddEquipment() {
+    document.getElementById('equip-inspection').value = new Date().toISOString().split('T')[0];
+    document.getElementById('equip-location').value   = '';
+    document.getElementById('modal-equipment').classList.add('open');
+}
+
+async function saveEquipment() {
+    const btn = document.getElementById('save-equip-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    const payload = {
+        equipment_type:       document.getElementById('equip-type').value,
+        building:             document.getElementById('equip-building').value,
+        floor:                document.getElementById('equip-floor').value,
+        location_description: document.getElementById('equip-location').value.trim(),
+        last_inspection:      document.getElementById('equip-inspection').value,
+        status:               document.getElementById('equip-status').value,
+    };
+
+    const res = await api('equipment.php', 'POST', payload);
+    btn.disabled = false; btn.textContent = 'Save Equipment';
+
+    if (!res.success) { showToast('error','Error', res.message); return; }
+    closeModal('modal-equipment');
+    showToast('success','Equipment Added',`${payload.equipment_type} extinguisher saved to database.`);
+    loadEquipment();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DELETE — unified for users, devices, equipment
+// ═══════════════════════════════════════════════════════════════
+let deleteTarget = null;
+
+function deleteRecord(type, id, label) {
+    deleteTarget = { type, id };
+    document.getElementById('confirm-text').textContent = `Delete "${label}"? This will be permanently removed from the database.`;
+    document.getElementById('modal-confirm').classList.add('open');
+}
+
+async function confirmDelete() {
+    if (!deleteTarget) return;
+    const btn = document.getElementById('confirm-delete-btn');
+    btn.disabled = true; btn.textContent = 'Deleting…';
+
+    const { type, id } = deleteTarget;
+    const endpoints = { user:'users.php', device:'devices.php', equipment:'equipment.php' };
+    const idField   = { user:'user_id', device:'device_id', equipment:'equipment_id' };
+
+    const res = await api(endpoints[type], 'DELETE', { [idField[type]]: id });
+    btn.disabled = false; btn.textContent = 'Delete';
+
+    if (!res.success) { showToast('error','Delete Failed', res.message); closeModal('modal-confirm'); return; }
+
+    closeModal('modal-confirm');
+    showToast('success','Deleted','Record removed from database.');
+    if (type === 'user')      loadUsers();
+    if (type === 'device')    { loadDevices(); loadDashboard(); }
+    if (type === 'equipment') loadEquipment();
+    deleteTarget = null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODALS
+// ═══════════════════════════════════════════════════════════════
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', function(e) { if (e.target===this) this.classList.remove('open'); }));
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+function showToast(type, title, sub) {
+    const icons = {success:'✅',error:'❌',warn:'⚠️',info:'ℹ️'};
+    const t = document.createElement('div'); t.className = 'toast';
+    t.innerHTML = `<div>${icons[type]||'ℹ️'}</div><div><div class="toast-title">${title}</div><div class="toast-sub">${sub}</div></div>`;
+    document.getElementById('toast-container').appendChild(t);
+    setTimeout(() => t.remove(), 4500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CLOCK + SIMULATED LIVE PM READINGS
+// ═══════════════════════════════════════════════════════════════
+function startLiveClock() {
+    const tick = () => document.getElementById('live-clock').textContent = new Date().toLocaleTimeString('en-PH');
+    tick(); setInterval(tick, 1000);
+}
+
+function startLiveReadings() {
+    setInterval(() => {
+        // Fluctuate simulated PM overlay for online devices
+        allDevices.filter(d=>d.status==='Online').forEach(d => {
+            const latestInc = allIncidents.find(i => i.device_id === d.device_id);
+            const threat = latestInc ? latestInc.threat_level : 'Gray';
+            const base = {Gray:12,Yellow:130,Orange:280,Red:520}[threat] || 12;
+            pmOverlay[d.device_id] = parseFloat((base + (Math.random()-.5)*18).toFixed(1));
+        });
+        const view = document.querySelector('.nav-item.active')?.dataset.view;
+        if (view === 'dashboard') renderDashboard();
+    }, 8000);
+
+    // Also re-fetch incidents every 30 seconds to pick up new ones from simulation
+    setInterval(async () => {
+        const res = await api('incidents.php');
+        if (res.success) { allIncidents = res.data; }
+        const view = document.querySelector('.nav-item.active')?.dataset.view;
+        if (view === 'dashboard') renderDashboard();
+        if (view === 'incidents') renderIncidents();
+    }, 30000);
+}
+</script>
+</body>
+</html>
