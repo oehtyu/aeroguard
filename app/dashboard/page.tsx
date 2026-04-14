@@ -6,48 +6,81 @@ const IDLE_TIMEOUT_MS = 15 * 60 * 1000
 const SESSION_KEY     = 'ag_user'
 const LAST_ACTIVE_KEY = 'ag_last_active'
 
-// ── OCCUPANCY MAPS ────────────────────────────────────────────
-// Maps building+floor+room → SVG {x,y} center
-const ROOM_POS_MAP: Record<string,{x:number,y:number}> = {
-  'Medina Lacson Building|2F|Room 201':{x:117,y:152},
-  'Medina Lacson Building|2F|Room 202':{x:177,y:152},
-  'Medina Lacson Building|2F|Room 203':{x:237,y:152},
-  'Medina Lacson Building|1F|Room 101':{x:117,y:220},
-  'Medina Lacson Building|1F|Room 102':{x:177,y:220},
-  'Medina Lacson Building|1F|Room 103':{x:237,y:220},
-  'New CEA Building|1F|Room 101':{x:400,y:120},
-  'New CEA Building|1F|Room 102':{x:465,y:120},
-  'New CEA Building|1F|Room 103':{x:530,y:120},
-  'New CEA Building|2F|Room 201':{x:400,y:195},
-  'New CEA Building|2F|Room 204':{x:465,y:195},
-  'New CEA Building|2F|Room 205':{x:530,y:195},
-  'CAHS Building|1F|Room 103':{x:160,y:380},
-  'CAHS Building|1F|Room 104':{x:225,y:380},
-  'CAHS Building|1F|Room 105':{x:282,y:380},
-  'CAHS Building|2F|Room 202':{x:160,y:450},
-  'CAHS Building|2F|Room 203':{x:225,y:450},
-  'CAHS Building|2F|Room 204':{x:282,y:450},
+const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
+
+// ── STATIC BUILDING / ROOM / EXTINGUISHER CONFIG ─────────────
+// Each room has a fixed SVG center point on the 2D map
+const ROOM_CONFIGS: Record<string, { x:number; y:number; building:string; floor:string; room:string }> = {
+  'Medina Lacson Building|1F|Room 101': { x:117, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
+  'Medina Lacson Building|1F|Room 102': { x:177, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
+  'Medina Lacson Building|1F|Room 103': { x:237, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
+  'Medina Lacson Building|2F|Room 201': { x:117, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
+  'Medina Lacson Building|2F|Room 202': { x:177, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
+  'Medina Lacson Building|2F|Room 203': { x:237, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
+  'New CEA Building|1F|Room 101': { x:400, y:120, building:'New CEA Building', floor:'1F', room:'Room 101' },
+  'New CEA Building|1F|Room 102': { x:465, y:120, building:'New CEA Building', floor:'1F', room:'Room 102' },
+  'New CEA Building|1F|Room 103': { x:530, y:120, building:'New CEA Building', floor:'1F', room:'Room 103' },
+  'New CEA Building|2F|Room 201': { x:400, y:195, building:'New CEA Building', floor:'2F', room:'Room 201' },
+  'New CEA Building|2F|Room 204': { x:465, y:195, building:'New CEA Building', floor:'2F', room:'Room 204' },
+  'New CEA Building|2F|Room 205': { x:530, y:195, building:'New CEA Building', floor:'2F', room:'Room 205' },
+  'CAHS Building|1F|Room 103': { x:160, y:380, building:'CAHS Building', floor:'1F', room:'Room 103' },
+  'CAHS Building|1F|Room 104': { x:225, y:380, building:'CAHS Building', floor:'1F', room:'Room 104' },
+  'CAHS Building|1F|Room 105': { x:282, y:380, building:'CAHS Building', floor:'1F', room:'Room 105' },
+  'CAHS Building|2F|Room 202': { x:160, y:450, building:'CAHS Building', floor:'2F', room:'Room 202' },
+  'CAHS Building|2F|Room 203': { x:225, y:450, building:'CAHS Building', floor:'2F', room:'Room 203' },
+  'CAHS Building|2F|Room 204': { x:282, y:450, building:'CAHS Building', floor:'2F', room:'Room 204' },
 }
 
-// Maps building+floor+locationDesc → SVG {x,y} for extinguishers
-const EXT_POS_MAP: Record<string,{x:number,y:number}> = {
-  'Medina Lacson Building|2F|Hallway Rooms 201-202':{x:145,y:178},
-  'Medina Lacson Building|1F|Near main staircase':{x:145,y:250},
-  'New CEA Building|1F|Hallway near Room 101':{x:415,y:155},
-  'New CEA Building|1F|Laboratory near Room 103':{x:480,y:155},
-  'New CEA Building|2F|Hallway Rooms 204-205':{x:480,y:235},
-  'CAHS Building|1F|Main hallway 103-104':{x:195,y:415},
-  'CAHS Building|2F|Hallway Rooms 201-202':{x:195,y:480},
-  'CAHS Building|2F|Near nursing lab Room 203':{x:260,y:480},
+const EXT_CONFIGS: Record<string, { x:number; y:number }> = {
+  // ── Medina Lacson Building ────────────────────────────────
+  // DB value (row 1): "Hallway between Rooms 201-202" or similar — 2F
+  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:145, y:178 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:145, y:178 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:145, y:178 },
+  // DB value (row 2): "Near main staircase, R…" — 1F
+  'Medina Lacson Building|1F|Near main staircase':                { x:145, y:250 },
+  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:145, y:250 },
+  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:145, y:250 },
+
+  // ── New CEA Building ──────────────────────────────────────
+  // DB value (row 3): "Hallway near Room 101 …" — 1F
+  'New CEA Building|1F|Hallway near Room 101':                    { x:415, y:155 },
+  'New CEA Building|1F|Hallway near Room 101 and 102':            { x:415, y:155 },
+  // DB value (row 4): "Laboratory area near R…" — 1F
+  'New CEA Building|1F|Laboratory near Room 103':                 { x:480, y:155 },
+  'New CEA Building|1F|Laboratory area near Room 103':            { x:480, y:155 },
+  'New CEA Building|1F|Laboratory area near Rooms 103':          { x:480, y:155 },
+  // DB value (row 5): "Hallway between Rooms …" — 2F
+  'New CEA Building|2F|Hallway Rooms 204-205':                    { x:480, y:235 },
+  'New CEA Building|2F|Hallway between Rooms 204-205':            { x:480, y:235 },
+  'New CEA Building|2F|Hallway between Rooms 204 and 205':        { x:480, y:235 },
+
+  // ── CAHS Building ─────────────────────────────────────────
+  // DB value (row 7): "Main hallway between R…" — 1F
+  'CAHS Building|1F|Main hallway 103-104':                        { x:195, y:415 },
+  'CAHS Building|1F|Main hallway between Rooms 103-104':          { x:195, y:415 },
+  'CAHS Building|1F|Main hallway between Rooms 103 and 104':      { x:195, y:415 },
+  'CAHS Building|1F|Main hallway between R':                      { x:195, y:415 },
+  // DB value (row 8): "Supply room near Room …" — 1F (Foam, Expired)
+  'CAHS Building|1F|Supply room near Room 105':                   { x:255, y:415 },
+  'CAHS Building|1F|Supply room near Rooms 105':                  { x:255, y:415 },
+  // DB value (row 9): "Hallway between Rooms …" — 2F
+  'CAHS Building|2F|Hallway Rooms 201-202':                       { x:195, y:480 },
+  'CAHS Building|2F|Hallway between Rooms 201-202':               { x:195, y:480 },
+  'CAHS Building|2F|Hallway between Rooms 201 and 202':           { x:195, y:480 },
+  // DB value (row 10): "Near nursing lab Room …" — 2F
+  'CAHS Building|2F|Near nursing lab Room 203':                   { x:260, y:480 },
+  'CAHS Building|2F|Near nursing lab Room 203 area':              { x:260, y:480 },
 }
 
-function getRoomPos(building:string, floor:string, room:string):{x:number,y:number}|null {
-  return ROOM_POS_MAP[`${building}|${floor}|${room}`] || null
+function getRoomPos(building:string, floor:string, room:string) {
+  return ROOM_CONFIGS[`${building}|${floor}|${room}`] || null
 }
-function getExtPos(building:string, floor:string, desc:string):{x:number,y:number}|null {
-  return EXT_POS_MAP[`${building}|${floor}|${desc}`] || null
+function getExtPos(building:string, floor:string, desc:string): {x:number;y:number}|null {
+  return EXT_CONFIGS[`${building}|${floor}|${desc}`] || null
 }
 
+// ── BUILDING SVG BLUEPRINTS ───────────────────────────────────
 const BUILDINGS = [
   { id:'medina', name:'Medina Lacson Building', x:80, y:120, w:200, h:140, color:'#1e3a5f',
     rooms:[{l:'201',x:90,y:130,w:55,h:45},{l:'202',x:150,y:130,w:55,h:45},{l:'203',x:210,y:130,w:60,h:45},
@@ -60,7 +93,55 @@ const BUILDINGS = [
            {l:'202',x:130,y:420,w:60,h:60},{l:'203',x:195,y:420,w:60,h:60},{l:'204',x:260,y:420,w:50,h:60}] },
 ]
 const ASSEMBLY = {x:580,y:340,w:100,h:60}
-const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
+
+// ── BUILDING / ROOM OPTIONS ───────────────────────────────────
+const BUILDINGS_LIST = ['Medina Lacson Building','New CEA Building','CAHS Building']
+
+// Each room key is "floor|room" so we can derive floor automatically
+const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:string }[]> = {
+  'Medina Lacson Building': [
+    {floor:'1F', room:'Room 101', label:'1F — Room 101'},
+    {floor:'1F', room:'Room 102', label:'1F — Room 102'},
+    {floor:'1F', room:'Room 103', label:'1F — Room 103'},
+    {floor:'2F', room:'Room 201', label:'2F — Room 201'},
+    {floor:'2F', room:'Room 202', label:'2F — Room 202'},
+    {floor:'2F', room:'Room 203', label:'2F — Room 203'},
+  ],
+  'New CEA Building': [
+    {floor:'1F', room:'Room 101', label:'1F — Room 101'},
+    {floor:'1F', room:'Room 102', label:'1F — Room 102'},
+    {floor:'1F', room:'Room 103', label:'1F — Room 103'},
+    {floor:'2F', room:'Room 201', label:'2F — Room 201'},
+    {floor:'2F', room:'Room 204', label:'2F — Room 204'},
+    {floor:'2F', room:'Room 205', label:'2F — Room 205'},
+  ],
+  'CAHS Building': [
+    {floor:'1F', room:'Room 103', label:'1F — Room 103'},
+    {floor:'1F', room:'Room 104', label:'1F — Room 104'},
+    {floor:'1F', room:'Room 105', label:'1F — Room 105'},
+    {floor:'2F', room:'Room 202', label:'2F — Room 202'},
+    {floor:'2F', room:'Room 203', label:'2F — Room 203'},
+    {floor:'2F', room:'Room 204', label:'2F — Room 204'},
+  ],
+}
+
+const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; label:string }[]> = {
+  'Medina Lacson Building': [
+    {floor:'2F', desc:'Hallway between Rooms 201-202',      label:'2F — Hallway between Rooms 201-202'},
+    {floor:'1F', desc:'Near main staircase, Rooms 101-103', label:'1F — Near main staircase, Rooms 101-103'},
+  ],
+  'New CEA Building': [
+    {floor:'1F', desc:'Hallway near Room 101 and 102',     label:'1F — Hallway near Room 101 and 102'},
+    {floor:'1F', desc:'Laboratory area near Room 103',     label:'1F — Laboratory area near Room 103'},
+    {floor:'2F', desc:'Hallway between Rooms 204-205',     label:'2F — Hallway between Rooms 204-205'},
+  ],
+  'CAHS Building': [
+    {floor:'1F', desc:'Main hallway between Rooms 103-104', label:'1F — Main hallway between Rooms 103-104'},
+    {floor:'1F', desc:'Supply room near Room 105',          label:'1F — Supply room near Room 105'},
+    {floor:'2F', desc:'Hallway between Rooms 201-202',      label:'2F — Hallway between Rooms 201-202'},
+    {floor:'2F', desc:'Near nursing lab Room 203',          label:'2F — Near nursing lab Room 203'},
+  ],
+}
 
 // ── UI HELPERS ────────────────────────────────────────────────
 const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px'}
@@ -100,18 +181,23 @@ const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(
 // ── CAMPUS MAP ────────────────────────────────────────────────
 function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],equipment:any[]}) {
   const [tip,setTip]=useState<any>(null)
+
   const getThreat=(d:any)=>{
     const inc=incidents.find(i=>i.device_id===d.device_id&&!i.resolved)
     return inc?.threat_level||'Gray'
   }
+
   return (
     <div style={{position:'relative',width:'100%'}}>
       <svg viewBox="0 0 720 560" style={{width:'100%',height:'auto',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
+        {/* Grid */}
         {Array.from({length:18}).map((_,i)=><line key={`v${i}`} x1={i*40} y1={0} x2={i*40} y2={560} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
         {Array.from({length:14}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*40} x2={720} y2={i*40} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
+        {/* Roads */}
         <rect x={310} y={0} width={40} height={560} fill="rgba(255,255,255,0.04)" rx={2}/>
         <rect x={0} y={290} width={720} height={40} fill="rgba(255,255,255,0.04)" rx={2}/>
         <text x={325} y={275} fill="rgba(255,255,255,0.15)" fontSize={8} textAnchor="middle" fontFamily="monospace">ROAD</text>
+        {/* Buildings */}
         {BUILDINGS.map(b=>(
           <g key={b.id}>
             <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={b.color} rx={4} stroke="rgba(255,255,255,0.1)" strokeWidth={1}/>
@@ -124,9 +210,11 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             ))}
           </g>
         ))}
+        {/* Assembly area */}
         <rect x={ASSEMBLY.x} y={ASSEMBLY.y} width={ASSEMBLY.w} height={ASSEMBLY.h} fill="rgba(34,197,94,0.1)" rx={6} stroke="rgba(34,197,94,0.4)" strokeWidth={1.5} strokeDasharray="4 3"/>
         <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2-4} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace" fontWeight="bold">ASSEMBLY</text>
         <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2+8} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace">AREA</text>
+        {/* Evacuation route for Orange/Red */}
         {incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1).map(inc=>{
           const d=devices.find(dv=>dv.device_id===inc.device_id)
           if(!d) return null
@@ -140,26 +228,33 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             </g>
           )
         })}
-        {/* Fire extinguishers */}
+        {/* Fire extinguishers — rendered from live equipment data */}
         {equipment.map(e=>{
-          const pos=getExtPos(e.building,e.floor,e.location_description)
+          const pos=getExtPos(e.building, e.floor, e.location_description)
           if(!pos) return null
+          const isExpired = e.status === 'Expired'
+          const isMaintenance = e.status === 'Maintenance'
+          const strokeColor = isExpired ? '#ef4444' : isMaintenance ? '#eab308' : '#f97316'
           return (
-            <g key={e.equipment_id} style={{cursor:'pointer'}} onMouseEnter={()=>setTip({type:'ext',data:e,...pos})} onMouseLeave={()=>setTip(null)}>
-              <circle cx={pos.x} cy={pos.y} r={6} fill="rgba(249,115,22,0.2)" stroke="#f97316" strokeWidth={1}/>
-              <text x={pos.x} y={pos.y+4} textAnchor="middle" fontSize={8} fill="#f97316">🧯</text>
+            <g key={e.equipment_id} style={{cursor:'pointer'}}
+               onMouseEnter={()=>setTip({type:'ext',data:e,x:pos.x,y:pos.y})}
+               onMouseLeave={()=>setTip(null)}>
+              <circle cx={pos.x} cy={pos.y} r={7} fill="rgba(249,115,22,0.2)" stroke={strokeColor} strokeWidth={1.5}/>
+              <text x={pos.x} y={pos.y+4} textAnchor="middle" fontSize={9} fill={strokeColor}>🧯</text>
             </g>
           )
         })}
-        {/* Devices */}
+        {/* Devices — rendered from live device data */}
         {devices.map(d=>{
-          const pos=getRoomPos(d.building,d.floor,d.room)
+          const pos=getRoomPos(d.building, d.floor, d.room)
           if(!pos) return null
           const threat=getThreat(d)
           const color=THREAT_COLOR[threat]||'#94a3b8'
           const active=threat!=='Gray'
           return (
-            <g key={d.device_id} style={{cursor:'pointer'}} onMouseEnter={()=>setTip({type:'device',data:d,threat,...pos})} onMouseLeave={()=>setTip(null)}>
+            <g key={d.device_id} style={{cursor:'pointer'}}
+               onMouseEnter={()=>setTip({type:'device',data:d,threat,x:pos.x,y:pos.y})}
+               onMouseLeave={()=>setTip(null)}>
               {active&&(
                 <circle cx={pos.x} cy={pos.y} r={14} fill="none" stroke={color} strokeWidth={1} opacity={0.4}>
                   <animate attributeName="r" values="10;18;10" dur="2s" repeatCount="indefinite"/>
@@ -173,23 +268,24 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             </g>
           )
         })}
+        {/* Tooltip */}
         {tip&&(
           <g>
-            <rect x={tip.x>500?tip.x-145:tip.x+12} y={tip.y>400?tip.y-80:tip.y+12} width={140} height={tip.type==='device'?75:65} fill="#111827" rx={4} stroke="rgba(255,255,255,0.15)" strokeWidth={1}/>
+            <rect x={tip.x>500?tip.x-148:tip.x+12} y={tip.y>400?tip.y-80:tip.y+12} width={143} height={tip.type==='device'?78:68} fill="#111827" rx={4} stroke="rgba(255,255,255,0.15)" strokeWidth={1}/>
             {tip.type==='device'?(
               <>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="white" fontSize={8} fontWeight="bold" fontFamily="monospace">{tip.data.device_id}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.device_name}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} · {tip.data.room}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill={tip.data.status==='Online'?'#22c55e':'#ef4444'} fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-14:tip.y+74} fill={THREAT_COLOR[tip.threat]||'#94a3b8'} fontSize={7} fontFamily="monospace">⚠ {tip.threat} Level</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="white" fontSize={8} fontWeight="bold" fontFamily="monospace">{tip.data.device_id}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.device_name}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} · {tip.data.room}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill={tip.data.status==='Online'?'#22c55e':'#ef4444'} fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-14:tip.y+74} fill={THREAT_COLOR[tip.threat]||'#94a3b8'} fontSize={7} fontFamily="monospace">⚠ {tip.threat} Level</text>
               </>
             ):(
               <>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="#f97316" fontSize={8} fontWeight="bold" fontFamily="monospace">🧯 {tip.data.equipment_type}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.building.split(' ')[0]}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} — {tip.data.location_description}</text>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill="#22c55e" fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="#f97316" fontSize={8} fontWeight="bold" fontFamily="monospace">🧯 {tip.data.equipment_type}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.building.split(' ')[0]}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} — {tip.data.location_description}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill={tip.data.status==='Active'?'#22c55e':tip.data.status==='Expired'?'#ef4444':'#eab308'} fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
               </>
             )}
           </g>
@@ -211,69 +307,27 @@ function exportCSV(incidents: any[]) {
   const rows=['Time,Device,Location,Level,PM2.5,Status',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved?'Resolved':'Active'}"`)]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:'aeroguard_incidents.csv'});a.click()
 }
-
 function exportTXT(incidents: any[]) {
   const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Status','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.resolved?'Resolved':'Active'}`)]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:'aeroguard_incidents.txt'});a.click()
 }
-
 async function exportPDF(incidents: any[]) {
-  // Build PDF server-side via API
-  const res = await fetch('/api/export/pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ incidents })
-  })
-  if (!res.ok) { alert('PDF export failed.'); return }
-  const blob = await res.blob()
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'aeroguard_incidents.pdf' })
-  a.click()
+  const res=await fetch('/api/export/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
+  if(!res.ok){alert('PDF export failed.');return}
+  const blob=await res.blob()
+  Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'aeroguard_incidents.pdf'}).click()
 }
-
 async function exportDOCX(incidents: any[]) {
-  const res = await fetch('/api/export/docx', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ incidents })
-  })
-  if (!res.ok) { alert('DOCX export failed.'); return }
-  const blob = await res.blob()
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'aeroguard_incidents.docx' })
-  a.click()
+  const res=await fetch('/api/export/docx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
+  if(!res.ok){alert('DOCX export failed.');return}
+  const blob=await res.blob()
+  Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'aeroguard_incidents.docx'}).click()
 }
 
-// ── VALIDATION HELPERS ────────────────────────────────────────
-function validatePhone(p:string):string|null {
-  if(!p) return null
-  const c=p.replace(/\s/g,'')
-  if(!/^09\d{9}$/.test(c)) return 'Phone must start with 09 and be exactly 11 digits.'
-  return null
-}
-function validateEmail(e:string):string|null {
-  if(!e) return null
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return 'Please enter a valid email address.'
-  return null
-}
-function validateUsername(u:string):string|null {
-  if(!u) return 'Username is required.'
-  if(u.length<4) return 'Username must be at least 4 characters.'
-  if(!/^[a-zA-Z0-9_]+$/.test(u)) return 'Username may only contain letters, numbers, and underscores.'
-  return null
-}
-
-// ── BUILDING / FLOOR / ROOM OPTIONS ──────────────────────────
-const BUILDINGS_LIST = ['Medina Lacson Building','New CEA Building','CAHS Building']
-const FLOORS_LIST = ['1F','2F']
-const ROOMS_BY_BUILDING: Record<string,string[]> = {
-  'Medina Lacson Building':['Room 101','Room 102','Room 103','Room 201','Room 202','Room 203'],
-  'New CEA Building':['Room 101','Room 102','Room 103','Room 201','Room 204','Room 205'],
-  'CAHS Building':['Room 103','Room 104','Room 105','Room 202','Room 203','Room 204'],
-}
-const EXT_LOCATIONS_BY_BUILDING: Record<string,string[]> = {
-  'Medina Lacson Building':['Hallway Rooms 201-202','Near main staircase'],
-  'New CEA Building':['Hallway near Room 101','Laboratory near Room 103','Hallway Rooms 204-205'],
-  'CAHS Building':['Main hallway 103-104','Hallway Rooms 201-202','Near nursing lab Room 203'],
-}
+// ── VALIDATION ────────────────────────────────────────────────
+function validatePhone(p:string):string|null{if(!p)return null;const c=p.replace(/\s/g,'');if(!/^09\d{9}$/.test(c))return 'Phone must start with 09 and be exactly 11 digits.';return null}
+function validateEmail(e:string):string|null{if(!e)return null;if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))return 'Please enter a valid email address.';return null}
+function validateUsername(u:string):string|null{if(!u)return 'Username is required.';if(u.length<4)return 'Username must be at least 4 characters.';if(!/^[a-zA-Z0-9_]+$/.test(u))return 'Username may only contain letters, numbers, and underscores.';return null}
 
 // ── MAIN DASHBOARD ────────────────────────────────────────────
 export default function Dashboard() {
@@ -297,7 +351,6 @@ export default function Dashboard() {
   const [idleWarn,setIdleWarn]=useState(false)
   const [exportMenu,setExportMenu]=useState(false)
   const [exportLoading,setExportLoading]=useState<string|null>(null)
-  const [otpSent,setOtpSent]=useState(false)
   const [otpLoading,setOtpLoading]=useState(false)
   const idleTimer=useRef<any>(null)
   const warnTimer=useRef<any>(null)
@@ -307,7 +360,7 @@ export default function Dashboard() {
   const resetIdle=()=>{
     localStorage.setItem(LAST_ACTIVE_KEY,Date.now().toString())
     setIdleWarn(false)
-    clearTimeout(idleTimer.current); clearTimeout(warnTimer.current)
+    clearTimeout(idleTimer.current);clearTimeout(warnTimer.current)
     warnTimer.current=setTimeout(()=>setIdleWarn(true),IDLE_TIMEOUT_MS-2*60*1000)
     idleTimer.current=setTimeout(()=>doLogout(true),IDLE_TIMEOUT_MS)
   }
@@ -334,7 +387,6 @@ export default function Dashboard() {
   },[])
 
   const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),6000)}
-
   const api=async(url:string,method='GET',body?:any)=>{
     const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
     return res.json()
@@ -360,26 +412,21 @@ export default function Dashboard() {
     router.push('/login')
   }
 
-  // ── OCCUPANCY CHECKS ──────────────────────────────────────
+  // ── OCCUPANCY: check if a room already has a device ──────────
   function checkDeviceOccupied(building:string, floor:string, room:string, excludeId?:string): string|null {
-    const pos = getRoomPos(building, floor, room)
-    if (!pos) return null // no map slot = no occupancy conflict
-    const existing = devices.find(d =>
-      d.building === building && d.floor === floor && d.room === room && d.device_id !== excludeId
-    )
-    return existing ? `${room} in ${building} (${floor}) already has a device: ${existing.device_id}. Choose a different location.` : null
+    const existing=devices.find(d=>d.building===building&&d.floor===floor&&d.room===room&&d.device_id!==excludeId)
+    if(existing) return `${floor} — ${room} in ${building} is already occupied by device ${existing.device_id}.`
+    return null
   }
 
+  // ── OCCUPANCY: check if a location already has equipment ─────
   function checkExtOccupied(building:string, floor:string, desc:string, excludeId?:number): string|null {
-    const pos = getExtPos(building, floor, desc)
-    if (!pos) return null
-    const existing = equipment.find(e =>
-      e.building === building && e.floor === floor && e.location_description === desc && e.equipment_id !== excludeId
-    )
-    return existing ? `${desc} in ${building} (${floor}) already has a ${existing.equipment_type} extinguisher. That area is occupied.` : null
+    const existing=equipment.find(e=>e.building===building&&e.floor===floor&&e.location_description===desc&&e.equipment_id!==excludeId)
+    if(existing) return `${floor} — ${desc} in ${building} already has a ${existing.equipment_type} extinguisher.`
+    return null
   }
 
-  // ── SAVE USER (admin creates → OTP flow) ──────────────────
+  // ── SAVE USER ─────────────────────────────────────────────────
   async function saveUser(){
     const errs:Record<string,string>={}
     if(!form.full_name?.trim()) errs.full_name='Full name is required.'
@@ -387,36 +434,27 @@ export default function Dashboard() {
     if(uErr) errs.username=uErr
     if(!form.user_type) errs.user_type='Role is required.'
     if(!form.email?.trim()) errs.email='Email is required to send the OTP.'
-    else { const eErr=validateEmail(form.email.trim()); if(eErr) errs.email=eErr }
+    else{const eErr=validateEmail(form.email.trim());if(eErr)errs.email=eErr}
     if(form.phone){const p=validatePhone(form.phone.trim());if(p)errs.phone=p}
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
-
-    const d=await api('/api/users','POST',{
-      full_name:form.full_name.trim(), username:form.username.trim(),
-      user_type:form.user_type, email:form.email.trim(), phone:form.phone||null
-    })
+    const d=await api('/api/users','POST',{full_name:form.full_name.trim(),username:form.username.trim(),user_type:form.user_type,email:form.email.trim(),phone:form.phone||null})
     if(!d.success){showToast('error','Error',d.message);return}
-
-    // Send OTP
     setOtpLoading(true)
-    const otp=await api('/api/users/otp','POST',{email:d.email, user_id:d.user_id})
+    await api('/api/users/otp','POST',{email:d.email,user_id:d.user_id})
     setOtpLoading(false)
-    setOtpSent(true)
-    showToast('success','Account Created',`OTP sent to ${d.email}. User must verify to set their password.`)
-    setModal(null);setOtpSent(false);loadUsers()
+    showToast('success','Account Created',`OTP sent to ${d.email}.`)
+    setModal(null);loadUsers()
   }
 
-  // ── ROLE UPDATE (admin only) ──────────────────────────────
   async function saveRole(){
     if(!form.user_type){showToast('error','Error','Role is required.');return}
-    const d=await api('/api/users','PUT',{mode:'role', admin_id:user.user_id, user_id:editId, user_type:form.user_type})
+    const d=await api('/api/users','PUT',{mode:'role',admin_id:user.user_id,user_id:editId,user_type:form.user_type})
     if(!d.success){showToast('error','Error',d.message);return}
     showToast('success','Role Updated','User role changed.')
     setModal(null);loadUsers()
   }
 
-  // ── SELF EDIT (own profile) ───────────────────────────────
   async function saveSelfProfile(){
     const errs:Record<string,string>={}
     if(!form.full_name?.trim()) errs.full_name='Full name is required.'
@@ -426,9 +464,8 @@ export default function Dashboard() {
     if(form.phone){const p=validatePhone(form.phone.trim());if(p)errs.phone=p}
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
-    const d=await api('/api/users','PUT',{mode:'self', user_id:user.user_id, full_name:form.full_name, username:form.username, email:form.email||'', phone:form.phone||''})
+    const d=await api('/api/users','PUT',{mode:'self',user_id:user.user_id,full_name:form.full_name,username:form.username,email:form.email||'',phone:form.phone||''})
     if(!d.success){showToast('error','Error',d.message);return}
-    // Update session
     const updated={...user,...d.user}
     localStorage.setItem(SESSION_KEY,JSON.stringify(updated))
     setUser(updated)
@@ -436,64 +473,92 @@ export default function Dashboard() {
     setModal(null);loadUsers()
   }
 
-  // ── CHANGE OWN PASSWORD ───────────────────────────────────
   async function changePassword(){
     if(!form.current_password){setFormErrors({current_password:'Current password required.'});return}
     if(!form.new_password){setFormErrors({new_password:'New password required.'});return}
     if(form.new_password.length<8){setFormErrors({new_password:'Minimum 8 characters.'});return}
     if(form.new_password!==form.confirm_password){setFormErrors({confirm_password:'Passwords do not match.'});return}
     setFormErrors({})
-    const d=await api('/api/users/set-password','PUT',{user_id:user.user_id, current_password:form.current_password, new_password:form.new_password})
+    const d=await api('/api/users/set-password','PUT',{user_id:user.user_id,current_password:form.current_password,new_password:form.new_password})
     if(!d.success){showToast('error','Error',d.message);return}
     showToast('success','Password Changed','Your password has been updated.')
     setModal(null)
   }
 
-  // ── SAVE DEVICE ───────────────────────────────────────────
+  // ── SAVE DEVICE ───────────────────────────────────────────────
+  // form.roomKey = "floor|room" combined selector
   async function saveDevice(){
     const errs:Record<string,string>={}
     if(!form.device_id?.trim()) errs.device_id='Device ID is required.'
     if(!form.device_name?.trim()) errs.device_name='Device name is required.'
     if(!form.building) errs.building='Building is required.'
+    if(!form.roomKey) errs.roomKey='Room is required.'
 
-    if(!Object.keys(errs).length) {
-      const occ=checkDeviceOccupied(form.building, form.floor||'1F', form.room||ROOMS_BY_BUILDING[form.building]?.[0], editId||undefined)
-      if(occ) errs.room=occ
+    if(!Object.keys(errs).length){
+      // Derive floor + room from roomKey
+      const [floor, ...roomParts] = (form.roomKey||'').split('|')
+      const room = roomParts.join('|')
+      const occ=checkDeviceOccupied(form.building, floor, room, editId||undefined)
+      if(occ) errs.roomKey=occ
     }
+
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
 
-    const d=await api('/api/devices',editId?'PUT':'POST',{...form,device_id:form.device_id?.toUpperCase()})
+    const [floor, ...roomParts] = (form.roomKey||'').split('|')
+    const room = roomParts.join('|')
+
+    const payload={
+      device_id: form.device_id?.trim().toUpperCase(),
+      device_name: form.device_name?.trim(),
+      building: form.building,
+      floor,
+      room,
+      status: form.status||'Online',
+    }
+    const d=await api('/api/devices', editId?'PUT':'POST', payload)
     if(!d.success){showToast('error','Error',d.message);return}
-    showToast('success',editId?'Device Updated':'Device Added','Saved.')
+    showToast('success', editId?'Device Updated':'Device Added','Saved.')
     setModal(null);loadDevices()
   }
 
-  // ── SAVE EQUIPMENT ────────────────────────────────────────
+  // ── SAVE EQUIPMENT ────────────────────────────────────────────
+  // form.extKey = "floor|desc" combined selector
   async function saveEquipment(){
     const errs:Record<string,string>={}
     if(!form.equipment_type) errs.equipment_type='Type is required.'
     if(!form.building) errs.building='Building is required.'
-    if(!form.location_description) errs.location_description='Location is required.'
+    if(!form.extKey) errs.extKey='Location is required.'
 
-    if(!Object.keys(errs).length) {
-      const occ=checkExtOccupied(form.building, form.floor||'1F', form.location_description, editId||undefined)
-      if(occ) errs.location_description=occ
+    if(!Object.keys(errs).length){
+      const [floor, ...descParts] = (form.extKey||'').split('|')
+      const desc = descParts.join('|')
+      const occ=checkExtOccupied(form.building, floor, desc, editId||undefined)
+      if(occ) errs.extKey=occ
     }
+
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
 
-    const method = editId ? 'PUT' : 'POST'
-    const payload = editId
-      ? { equipment_id: editId, ...form }
-      : form
-    const d=await api('/api/equipment',method,payload)
+    const [floor, ...descParts] = (form.extKey||'').split('|')
+    const desc = descParts.join('|')
+
+    const payload={
+      ...(editId?{equipment_id:editId}:{}),
+      equipment_type: form.equipment_type,
+      building: form.building,
+      floor,
+      location_description: desc,
+      status: form.status||'Active',
+      last_inspection: form.last_inspection||null,
+    }
+    const d=await api('/api/equipment', editId?'PUT':'POST', payload)
     if(!d.success){showToast('error','Error',d.message);return}
-    showToast('success',editId?'Equipment Updated':'Equipment Added','Saved.')
+    showToast('success', editId?'Equipment Updated':'Equipment Added','Saved.')
     setModal(null);loadEquipment()
   }
 
-  // ── DELETE ────────────────────────────────────────────────
+  // ── DELETE ────────────────────────────────────────────────────
   async function confirmDelete(){
     if(!deleteTarget) return
     const urls:Record<string,string>={user:'/api/users',device:'/api/devices',equipment:'/api/equipment'}
@@ -507,16 +572,14 @@ export default function Dashboard() {
     if(deleteTarget.type==='equipment')loadEquipment()
   }
 
-  // ── EXPORT WITH LOADING ───────────────────────────────────
   async function handleExport(type:string){
-    setExportMenu(false)
-    setExportLoading(type)
-    try {
+    setExportMenu(false);setExportLoading(type)
+    try{
       if(type==='csv') exportCSV(incidents)
       else if(type==='txt') exportTXT(incidents)
       else if(type==='pdf') await exportPDF(incidents)
       else if(type==='docx') await exportDOCX(incidents)
-    } finally { setExportLoading(null) }
+    } finally{setExportLoading(null)}
   }
 
   const online=devices.filter(d=>d.status==='Online').length
@@ -550,15 +613,11 @@ export default function Dashboard() {
       {formErrors[key]&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors[key]}</div>}
     </div>
   )
-
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
-  const sel=(key:string,options:string[],disabled=false)=>(
-    <select value={form[key]||options[0]} onChange={e=>setForm({...form,[key]:e.target.value})} disabled={disabled}
-      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}>
-      {options.map(o=><option key={o} value={o}>{o}</option>)}
-    </select>
-  )
+  // Derived room list for current building in device form
+  const currentRoomOptions = ROOMS_BY_BUILDING[form.building] || []
+  const currentExtOptions  = EXT_LOCATIONS_BY_BUILDING[form.building] || []
 
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
@@ -594,7 +653,6 @@ export default function Dashboard() {
               <div style={{fontSize:'.65rem',color:'var(--muted)'}}>{user?.user_type}</div>
             </div>
           </div>
-          {/* My Account actions */}
           <div style={{display:'flex',gap:6,marginBottom:8}}>
             <button onClick={()=>{setForm({full_name:user.full_name,username:user.username,email:user.email||'',phone:user.phone||''});setFormErrors({});setModal('selfEdit')}} style={{flex:1,padding:'6px 0',background:'rgba(0,194,255,.08)',border:'1px solid rgba(0,194,255,.2)',borderRadius:6,color:'var(--accent)',fontSize:'.68rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>✏️ Profile</button>
             <button onClick={()=>{setForm({});setFormErrors({});setModal('changePassword')}} style={{flex:1,padding:'6px 0',background:'rgba(234,179,8,.08)',border:'1px solid rgba(234,179,8,.2)',borderRadius:6,color:'var(--yellow)',fontSize:'.68rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>🔑 Password</button>
@@ -636,7 +694,6 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-
               <div style={{display:'grid',gridTemplateColumns:'1fr 380px',gap:16}}>
                 <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -664,7 +721,6 @@ export default function Dashboard() {
                     {devices.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No devices registered.</div>}
                   </div>
                 </div>
-
                 <div style={{display:'flex',flexDirection:'column',gap:16}}>
                   <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                     <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)'}}><span style={{fontWeight:600,fontSize:'.875rem'}}>Recent Alerts</span></div>
@@ -741,18 +797,12 @@ export default function Dashboard() {
                 <div style={{flex:1}}/>
                 <div style={{position:'relative'}}>
                   <button onClick={()=>setExportMenu(!exportMenu)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)',display:'flex',alignItems:'center',gap:6}}>
-                    {exportLoading ? '⏳ Exporting…' : '⬇ Export ▾'}
+                    {exportLoading?'⏳ Exporting…':'⬇ Export ▾'}
                   </button>
                   {exportMenu&&(
                     <div style={{position:'absolute',right:0,top:'110%',background:'var(--panel)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',zIndex:100,minWidth:180,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
-                      {[
-                        {label:'📊 Export as CSV',key:'csv'},
-                        {label:'📝 Export as TXT',key:'txt'},
-                        {label:'📄 Download as PDF',key:'pdf'},
-                        {label:'📃 Download as Word',key:'docx'},
-                      ].map(item=>(
-                        <div key={item.key} onClick={()=>handleExport(item.key)}
-                          style={{padding:'10px 16px',cursor:'pointer',fontSize:'.82rem',color:'var(--text)',borderBottom:'1px solid var(--border)'}}
+                      {[{label:'📊 Export as CSV',key:'csv'},{label:'📝 Export as TXT',key:'txt'},{label:'📄 Download as PDF',key:'pdf'},{label:'📃 Download as Word',key:'docx'}].map(item=>(
+                        <div key={item.key} onClick={()=>handleExport(item.key)} style={{padding:'10px 16px',cursor:'pointer',fontSize:'.82rem',color:'var(--text)',borderBottom:'1px solid var(--border)'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='var(--panel2)')}
                           onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
                           {item.label}
@@ -787,7 +837,7 @@ export default function Dashboard() {
               <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
                 <input value={userSearch} onChange={e=>setUserSearch(e.target.value)} placeholder="🔍  Search users..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setForm({user_type:'Security'});setFormErrors({});setOtpSent(false);setModal('user')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add User</button>
+                <button onClick={()=>{setForm({user_type:'Security'});setFormErrors({});setModal('user')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add User</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1.5fr 1.2fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
@@ -801,13 +851,8 @@ export default function Dashboard() {
                     </div>
                     <RoleBadge role={u.user_type}/>
                     <div style={{color:'var(--muted)',fontSize:'.75rem'}}>{u.email||'—'}</div>
-                    <div>
-                      {u.is_verified
-                        ? <span style={{fontSize:'.7rem',color:'var(--green)',fontWeight:600}}>✅ Active</span>
-                        : <span style={{fontSize:'.7rem',color:'var(--yellow)',fontWeight:600}}>⏳ Pending OTP</span>}
-                    </div>
+                    <div>{u.is_verified?<span style={{fontSize:'.7rem',color:'var(--green)',fontWeight:600}}>✅ Active</span>:<span style={{fontSize:'.7rem',color:'var(--yellow)',fontWeight:600}}>⏳ Pending OTP</span>}</div>
                     <div style={{display:'flex',gap:6}}>
-                      {/* Admin: only change role */}
                       <button title="Change Role" onClick={()=>{setEditId(u.user_id);setForm({user_type:u.user_type});setFormErrors({});setModal('changeRole')}} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>🏷️</button>
                       <button title="Delete User" onClick={()=>{setDeleteTarget({type:'user',id:u.user_id,label:u.full_name});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>🗑</button>
                     </div>
@@ -815,9 +860,7 @@ export default function Dashboard() {
                 ))}
                 {users.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No users found.</div>}
               </div>
-              <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)',padding:'0 4px'}}>
-                ℹ️ Admin can only change user roles or delete accounts. Users manage their own profile and password from their sidebar.
-              </div>
+              <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)',padding:'0 4px'}}>ℹ️ Admin can only change user roles or delete accounts. Users manage their own profile and password from their sidebar.</div>
             </div>
           )}
 
@@ -827,7 +870,14 @@ export default function Dashboard() {
               <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setEditId(null);setForm({building:'Medina Lacson Building',floor:'1F',room:ROOMS_BY_BUILDING['Medina Lacson Building'][0],status:'Online'});setFormErrors({});setModal('device')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
+                <button onClick={()=>{
+                  const defaultBuilding='Medina Lacson Building'
+                  const defaultRoom=ROOMS_BY_BUILDING[defaultBuilding][0]
+                  setEditId(null)
+                  setForm({building:defaultBuilding,roomKey:`${defaultRoom.floor}|${defaultRoom.room}`,status:'Online'})
+                  setFormErrors({})
+                  setModal('device')
+                }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
@@ -842,7 +892,12 @@ export default function Dashboard() {
                       <Badge status={d.status}/>
                       <ThreatBadge level={threat}/>
                       <div style={{display:'flex',gap:6}}>
-                        <button onClick={()=>{setEditId(d.device_id);setForm({device_id:d.device_id,device_name:d.device_name,building:d.building,floor:d.floor,room:d.room,status:d.status});setFormErrors({});setModal('device')}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem'}}>✏️</button>
+                        <button onClick={()=>{
+                          setEditId(d.device_id)
+                          setForm({device_id:d.device_id,device_name:d.device_name,building:d.building,roomKey:`${d.floor}|${d.room}`,status:d.status})
+                          setFormErrors({})
+                          setModal('device')
+                        }} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem'}}>✏️</button>
                         <button onClick={()=>{setDeleteTarget({type:'device',id:d.device_id,label:d.device_id});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem'}}>🗑</button>
                       </div>
                     </div>
@@ -858,7 +913,14 @@ export default function Dashboard() {
             <div>
               <div style={{display:'flex',marginBottom:16}}>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setEditId(null);setForm({equipment_type:'ABC',building:'Medina Lacson Building',floor:'1F',status:'Active',location_description:EXT_LOCATIONS_BY_BUILDING['Medina Lacson Building'][0],last_inspection:new Date().toISOString().split('T')[0]});setFormErrors({});setModal('equipment')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Equipment</button>
+                <button onClick={()=>{
+                  const defaultBuilding='Medina Lacson Building'
+                  const defaultExt=EXT_LOCATIONS_BY_BUILDING[defaultBuilding][0]
+                  setEditId(null)
+                  setForm({equipment_type:'ABC',building:defaultBuilding,extKey:`${defaultExt.floor}|${defaultExt.desc}`,status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
+                  setFormErrors({})
+                  setModal('equipment')
+                }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Equipment</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 80px',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
@@ -872,7 +934,12 @@ export default function Dashboard() {
                     <div style={{fontFamily:'var(--mono)',fontSize:'.75rem',color:'var(--muted)'}}>{e.last_inspection||'—'}</div>
                     <Badge status={e.status}/>
                     <div style={{display:'flex',gap:6}}>
-                      <button onClick={()=>{setEditId(e.equipment_id);setForm({equipment_type:e.equipment_type,building:e.building,floor:e.floor,location_description:e.location_description,status:e.status,last_inspection:e.last_inspection||''});setFormErrors({});setModal('equipment')}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem'}}>✏️</button>
+                      <button onClick={()=>{
+                        setEditId(e.equipment_id)
+                        setForm({equipment_type:e.equipment_type,building:e.building,extKey:`${e.floor}|${e.location_description}`,status:e.status,last_inspection:e.last_inspection||''})
+                        setFormErrors({})
+                        setModal('equipment')
+                      }} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem'}}>✏️</button>
                       <button onClick={()=>{setDeleteTarget({type:'equipment',id:e.equipment_id,label:e.equipment_type});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem'}}>🗑</button>
                     </div>
                   </div>
@@ -888,7 +955,7 @@ export default function Dashboard() {
       {modal&&(
         <div onClick={e=>{if(e.target===e.currentTarget)setModal(null)}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',backdropFilter:'blur(4px)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center'}}>
 
-          {/* CREATE USER (admin) */}
+          {/* CREATE USER */}
           {modal==='user'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:500,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -913,7 +980,6 @@ export default function Dashboard() {
                   <div>{lbl('Phone (optional)')}{input('phone','09123456789')}</div>
                 </div>
                 <div>{lbl('Email (required — OTP will be sent here)')}{input('email','user@bpsu.edu.ph','email')}</div>
-                {formErrors.email&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.email}</div>}
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
@@ -924,7 +990,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* CHANGE ROLE (admin only) */}
+          {/* CHANGE ROLE */}
           {modal==='changeRole'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:360,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -947,7 +1013,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* SELF EDIT (own profile) */}
+          {/* SELF EDIT */}
           {modal==='selfEdit'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:460,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -971,7 +1037,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* CHANGE PASSWORD (self) */}
+          {/* CHANGE PASSWORD */}
           {modal==='changePassword'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:400,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -990,7 +1056,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* DEVICE MODAL */}
+          {/* DEVICE MODAL — no Floor field, single Room dropdown */}
           {modal==='device'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:480,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1004,30 +1070,37 @@ export default function Dashboard() {
                 </div>
                 <div style={{marginBottom:14}}>
                   {lbl('Building')}
-                  {sel('building', BUILDINGS_LIST)}
+                  <select value={form.building||'Medina Lacson Building'}
+                    onChange={e=>{
+                      const b=e.target.value
+                      const firstRoom=ROOMS_BY_BUILDING[b]?.[0]
+                      setForm({...form, building:b, roomKey: firstRoom?`${firstRoom.floor}|${firstRoom.room}`:''})
+                      setFormErrors({...formErrors, building:'', roomKey:''})
+                    }}
+                    style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
+                  </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
-                  <div>
-                    {lbl('Floor')}
-                    {sel('floor', FLOORS_LIST)}
-                  </div>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12}}>
                   <div>
                     {lbl('Room')}
-                    <select value={form.room||(ROOMS_BY_BUILDING[form.building]?.[0]||'')} onChange={e=>setForm({...form,room:e.target.value})}
-                      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.room?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                      {(ROOMS_BY_BUILDING[form.building]||[]).map(r=><option key={r} value={r}>{r}</option>)}
+                    <select value={form.roomKey||(currentRoomOptions[0]?`${currentRoomOptions[0].floor}|${currentRoomOptions[0].room}`:'')}
+                      onChange={e=>{setForm({...form,roomKey:e.target.value});setFormErrors({...formErrors,roomKey:''})}}
+                      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.roomKey?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {currentRoomOptions.map(r=><option key={`${r.floor}|${r.room}`} value={`${r.floor}|${r.room}`}>{r.label}</option>)}
                     </select>
-                    {formErrors.room&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.room}</div>}
+                    {formErrors.roomKey&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.roomKey}</div>}
                   </div>
                   <div>
                     {lbl('Status')}
-                    {sel('status', ['Online','Offline','Maintenance'])}
+                    <select value={form.status||'Online'} onChange={e=>setForm({...form,status:e.target.value})}
+                      style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {['Online','Offline','Maintenance'].map(s=><option key={s} value={s}>{s}</option>)}
+                    </select>
                   </div>
                 </div>
-                <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)'}}>
-                  💡 Only rooms with a map slot will appear on the 2D campus map.
-                </div>
+                <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each room can only hold one device. Occupied rooms will show an error.</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
@@ -1036,7 +1109,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* EQUIPMENT MODAL */}
+          {/* EQUIPMENT MODAL — single Location dropdown (includes floor) */}
           {modal==='equipment'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:480,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1047,36 +1120,47 @@ export default function Dashboard() {
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
                   <div>
                     {lbl('Type')}
-                    {sel('equipment_type', ['ABC','CO2','Water','Foam'])}
+                    <select value={form.equipment_type||'ABC'} onChange={e=>setForm({...form,equipment_type:e.target.value})}
+                      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.equipment_type?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {['ABC','CO2','Water','Foam'].map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {formErrors.equipment_type&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.equipment_type}</div>}
                   </div>
                   <div>
                     {lbl('Status')}
-                    {sel('status', ['Active','Maintenance','Expired'])}
+                    <select value={form.status||'Active'} onChange={e=>setForm({...form,status:e.target.value})}
+                      style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {['Active','Maintenance','Expired'].map(s=><option key={s} value={s}>{s}</option>)}
+                    </select>
                   </div>
                 </div>
                 <div style={{marginBottom:14}}>
                   {lbl('Building')}
-                  {sel('building', BUILDINGS_LIST)}
+                  <select value={form.building||'Medina Lacson Building'}
+                    onChange={e=>{
+                      const b=e.target.value
+                      const firstExt=EXT_LOCATIONS_BY_BUILDING[b]?.[0]
+                      setForm({...form, building:b, extKey: firstExt?`${firstExt.floor}|${firstExt.desc}`:''})
+                      setFormErrors({...formErrors, building:'', extKey:''})
+                    }}
+                    style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
+                  </select>
+                  {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14}}>
                   <div>
-                    {lbl('Floor')}
-                    {sel('floor', FLOORS_LIST)}
+                    {lbl('Location (map slot)')}
+                    <select value={form.extKey||(currentExtOptions[0]?`${currentExtOptions[0].floor}|${currentExtOptions[0].desc}`:'')}
+                      onChange={e=>{setForm({...form,extKey:e.target.value});setFormErrors({...formErrors,extKey:''})}}
+                      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.extKey?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {currentExtOptions.map(l=><option key={`${l.floor}|${l.desc}`} value={`${l.floor}|${l.desc}`}>{l.label}</option>)}
+                    </select>
+                    {formErrors.extKey&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.extKey}</div>}
                   </div>
                   <div>{lbl('Last Inspection Date')}{input('last_inspection','','date')}</div>
                 </div>
-                <div>
-                  {lbl('Location (map slot)')}
-                  <select value={form.location_description||(EXT_LOCATIONS_BY_BUILDING[form.building]?.[0]||'')}
-                    onChange={e=>setForm({...form,location_description:e.target.value})}
-                    style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.location_description?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {(EXT_LOCATIONS_BY_BUILDING[form.building]||[]).map(l=><option key={l} value={l}>{l}</option>)}
-                  </select>
-                  {formErrors.location_description&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.location_description}</div>}
-                </div>
-                <div style={{marginTop:10,fontSize:'.75rem',color:'var(--muted)'}}>
-                  💡 Each map location can only hold one extinguisher. Occupied slots will show an error.
-                </div>
+                <div style={{marginTop:4,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each map location can only hold one extinguisher. Occupied slots will show an error.</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
