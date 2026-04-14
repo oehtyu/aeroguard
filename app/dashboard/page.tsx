@@ -6,45 +6,31 @@ const IDLE_TIMEOUT_MS = 15 * 60 * 1000
 const SESSION_KEY     = 'ag_user'
 const LAST_ACTIVE_KEY = 'ag_last_active'
 
-// ── MAP HELPERS ───────────────────────────────────────────────
-// Device positions on SVG map — keyed by device_id from DB
-function getDevicePos(deviceId: string): {x:number,y:number}|null {
-  const map: Record<string,{x:number,y:number}> = {
-    'AG-001':{x:117,y:152},'AG-002':{x:177,y:152},'AG-003':{x:237,y:152},
-    'AG-004':{x:400,y:120},'AG-005':{x:465,y:120},'AG-006':{x:465,y:195},
-    'AG-007':{x:160,y:380},'AG-008':{x:225,y:450},
-  }
-  return map[deviceId] || null
+// ── OCCUPANCY MAPS ────────────────────────────────────────────
+// Maps building+floor+room → SVG {x,y} center
+const ROOM_POS_MAP: Record<string,{x:number,y:number}> = {
+  'Medina Lacson Building|2F|Room 201':{x:117,y:152},
+  'Medina Lacson Building|2F|Room 202':{x:177,y:152},
+  'Medina Lacson Building|2F|Room 203':{x:237,y:152},
+  'Medina Lacson Building|1F|Room 101':{x:117,y:220},
+  'Medina Lacson Building|1F|Room 102':{x:177,y:220},
+  'Medina Lacson Building|1F|Room 103':{x:237,y:220},
+  'New CEA Building|1F|Room 101':{x:400,y:120},
+  'New CEA Building|1F|Room 102':{x:465,y:120},
+  'New CEA Building|1F|Room 103':{x:530,y:120},
+  'New CEA Building|2F|Room 201':{x:400,y:195},
+  'New CEA Building|2F|Room 204':{x:465,y:195},
+  'New CEA Building|2F|Room 205':{x:530,y:195},
+  'CAHS Building|1F|Room 103':{x:160,y:380},
+  'CAHS Building|1F|Room 104':{x:225,y:380},
+  'CAHS Building|1F|Room 105':{x:282,y:380},
+  'CAHS Building|2F|Room 202':{x:160,y:450},
+  'CAHS Building|2F|Room 203':{x:225,y:450},
+  'CAHS Building|2F|Room 204':{x:282,y:450},
 }
 
-// Map building+floor+room → SVG coordinates for dynamically registered devices
-function getRoomPos(building: string, floor: string, room: string): {x:number,y:number}|null {
-  const key = `${building}|${floor}|${room}`
-  const map: Record<string,{x:number,y:number}> = {
-    'Medina Lacson Building|2F|Room 201':{x:117,y:152},
-    'Medina Lacson Building|2F|Room 202':{x:177,y:152},
-    'Medina Lacson Building|2F|Room 203':{x:237,y:152},
-    'Medina Lacson Building|1F|Room 101':{x:117,y:220},
-    'Medina Lacson Building|1F|Room 102':{x:177,y:220},
-    'Medina Lacson Building|1F|Room 103':{x:237,y:220},
-    'New CEA Building|1F|Room 101':{x:400,y:120},
-    'New CEA Building|1F|Room 102':{x:465,y:120},
-    'New CEA Building|1F|Room 103':{x:530,y:120},
-    'New CEA Building|2F|Room 201':{x:400,y:195},
-    'New CEA Building|2F|Room 204':{x:465,y:195},
-    'New CEA Building|2F|Room 205':{x:530,y:195},
-    'CAHS Building|1F|Room 103':{x:160,y:380},
-    'CAHS Building|1F|Room 104':{x:225,y:380},
-    'CAHS Building|1F|Room 105':{x:282,y:380},
-    'CAHS Building|2F|Room 202':{x:160,y:450},
-    'CAHS Building|2F|Room 203':{x:225,y:450},
-    'CAHS Building|2F|Room 204':{x:282,y:450},
-  }
-  return map[key] || null
-}
-
-// Static extinguisher positions (still from DB, mapped visually)
-const EXT_VISUAL: Record<string,{x:number,y:number}> = {
+// Maps building+floor+locationDesc → SVG {x,y} for extinguishers
+const EXT_POS_MAP: Record<string,{x:number,y:number}> = {
   'Medina Lacson Building|2F|Hallway Rooms 201-202':{x:145,y:178},
   'Medina Lacson Building|1F|Near main staircase':{x:145,y:250},
   'New CEA Building|1F|Hallway near Room 101':{x:415,y:155},
@@ -55,8 +41,11 @@ const EXT_VISUAL: Record<string,{x:number,y:number}> = {
   'CAHS Building|2F|Near nursing lab Room 203':{x:260,y:480},
 }
 
+function getRoomPos(building:string, floor:string, room:string):{x:number,y:number}|null {
+  return ROOM_POS_MAP[`${building}|${floor}|${room}`] || null
+}
 function getExtPos(building:string, floor:string, desc:string):{x:number,y:number}|null {
-  return EXT_VISUAL[`${building}|${floor}|${desc}`] || null
+  return EXT_POS_MAP[`${building}|${floor}|${desc}`] || null
 }
 
 const BUILDINGS = [
@@ -123,7 +112,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
         <rect x={310} y={0} width={40} height={560} fill="rgba(255,255,255,0.04)" rx={2}/>
         <rect x={0} y={290} width={720} height={40} fill="rgba(255,255,255,0.04)" rx={2}/>
         <text x={325} y={275} fill="rgba(255,255,255,0.15)" fontSize={8} textAnchor="middle" fontFamily="monospace">ROAD</text>
-
         {BUILDINGS.map(b=>(
           <g key={b.id}>
             <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={b.color} rx={4} stroke="rgba(255,255,255,0.1)" strokeWidth={1}/>
@@ -136,16 +124,13 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             ))}
           </g>
         ))}
-
         <rect x={ASSEMBLY.x} y={ASSEMBLY.y} width={ASSEMBLY.w} height={ASSEMBLY.h} fill="rgba(34,197,94,0.1)" rx={6} stroke="rgba(34,197,94,0.4)" strokeWidth={1.5} strokeDasharray="4 3"/>
         <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2-4} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace" fontWeight="bold">ASSEMBLY</text>
         <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2+8} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace">AREA</text>
-
-        {/* Evacuation route for active Orange/Red */}
         {incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1).map(inc=>{
           const d=devices.find(dv=>dv.device_id===inc.device_id)
           if(!d) return null
-          const pos=getDevicePos(d.device_id)||getRoomPos(d.building,d.floor,d.room)
+          const pos=getRoomPos(d.building,d.floor,d.room)
           if(!pos) return null
           return (
             <g key={`evac-${inc.incident_id}`}>
@@ -155,8 +140,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             </g>
           )
         })}
-
-        {/* Fire extinguishers from DB */}
+        {/* Fire extinguishers */}
         {equipment.map(e=>{
           const pos=getExtPos(e.building,e.floor,e.location_description)
           if(!pos) return null
@@ -167,10 +151,9 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             </g>
           )
         })}
-
-        {/* AeroGuard devices from DB — fully dynamic */}
+        {/* Devices */}
         {devices.map(d=>{
-          const pos=getDevicePos(d.device_id)||getRoomPos(d.building,d.floor,d.room)
+          const pos=getRoomPos(d.building,d.floor,d.room)
           if(!pos) return null
           const threat=getThreat(d)
           const color=THREAT_COLOR[threat]||'#94a3b8'
@@ -190,8 +173,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             </g>
           )
         })}
-
-        {/* Tooltip */}
         {tip&&(
           <g>
             <rect x={tip.x>500?tip.x-145:tip.x+12} y={tip.y>400?tip.y-80:tip.y+12} width={140} height={tip.type==='device'?75:65} fill="#111827" rx={4} stroke="rgba(255,255,255,0.15)" strokeWidth={1}/>
@@ -205,7 +186,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
               </>
             ):(
               <>
-                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="#f97316" fontSize={8} fontWeight="bold" fontFamily="monospace">🧯 {tip.data.equipment_type} Extinguisher</text>
+                <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="#f97316" fontSize={8} fontWeight="bold" fontFamily="monospace">🧯 {tip.data.equipment_type}</text>
                 <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.building.split(' ')[0]}</text>
                 <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} — {tip.data.location_description}</text>
                 <text x={tip.x>500?tip.x-137:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill="#22c55e" fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
@@ -214,7 +195,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           </g>
         )}
       </svg>
-
       <div style={{display:'flex',gap:16,marginTop:10,flexWrap:'wrap',fontSize:'.7rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>
         {[{color:'#94a3b8',label:'Gray — Safe'},{color:'#eab308',label:'Yellow — Vaping'},{color:'#f97316',label:'Orange — Small Fire'},{color:'#ef4444',label:'Red — Critical'}].map(l=>(
           <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',background:l.color}}/>{l.label}</div>
@@ -228,29 +208,45 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
 
 // ── EXPORT HELPERS ────────────────────────────────────────────
 function exportCSV(incidents: any[]) {
-  const rows=['Time,Device,Location,Level,PM2.5,Status',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved?'Resolved':'Active'}"`)];
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:'incidents.csv'});a.click();
+  const rows=['Time,Device,Location,Level,PM2.5,Status',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved?'Resolved':'Active'}"`)]
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:'aeroguard_incidents.csv'});a.click()
 }
 
 function exportTXT(incidents: any[]) {
-  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Status','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.resolved?'Resolved':'Active'}`)];
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:'incidents.txt'});a.click();
+  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Status','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.resolved?'Resolved':'Active'}`)]
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:'aeroguard_incidents.txt'});a.click()
 }
 
-function exportJSON(incidents: any[]) {
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(incidents,null,2)],{type:'application/json'})),download:'incidents.json'});a.click();
+async function exportPDF(incidents: any[]) {
+  // Build PDF server-side via API
+  const res = await fetch('/api/export/pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ incidents })
+  })
+  if (!res.ok) { alert('PDF export failed.'); return }
+  const blob = await res.blob()
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'aeroguard_incidents.pdf' })
+  a.click()
 }
 
-function printReport(incidents: any[]) {
-  const html=`<html><head><title>AeroGuard Incident Report</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px}h1{color:#1e3a5f}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#1e3a5f;color:white}tr:nth-child(even){background:#f5f5f5}</style></head><body><h1>AeroGuard Incident Report</h1><p>Generated: ${new Date().toLocaleString('en-PH')}</p><table><thead><tr><th>Time</th><th>Device</th><th>Location</th><th>Level</th><th>PM2.5</th><th>Status</th></tr></thead><tbody>${incidents.map(i=>`<tr><td>${fmtTime(i.created_at)}</td><td>${i.device_id}</td><td>${i.location}</td><td>${i.threat_level}</td><td>${i.pm25_value} µg/m³</td><td>${i.resolved?'Resolved':'Active'}</td></tr>`).join('')}</tbody></table></body></html>`;
-  const w=window.open('','_blank');w?.document.write(html);w?.document.close();w?.print();
+async function exportDOCX(incidents: any[]) {
+  const res = await fetch('/api/export/docx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ incidents })
+  })
+  if (!res.ok) { alert('DOCX export failed.'); return }
+  const blob = await res.blob()
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'aeroguard_incidents.docx' })
+  a.click()
 }
 
-// ── INPUT VALIDATION ──────────────────────────────────────────
+// ── VALIDATION HELPERS ────────────────────────────────────────
 function validatePhone(p:string):string|null {
   if(!p) return null
   const c=p.replace(/\s/g,'')
-  if(!/^09\d{9}$/.test(c)) return 'Phone must start with 09 and be exactly 11 digits (e.g. 09123456789).'
+  if(!/^09\d{9}$/.test(c)) return 'Phone must start with 09 and be exactly 11 digits.'
   return null
 }
 function validateEmail(e:string):string|null {
@@ -263,6 +259,20 @@ function validateUsername(u:string):string|null {
   if(u.length<4) return 'Username must be at least 4 characters.'
   if(!/^[a-zA-Z0-9_]+$/.test(u)) return 'Username may only contain letters, numbers, and underscores.'
   return null
+}
+
+// ── BUILDING / FLOOR / ROOM OPTIONS ──────────────────────────
+const BUILDINGS_LIST = ['Medina Lacson Building','New CEA Building','CAHS Building']
+const FLOORS_LIST = ['1F','2F']
+const ROOMS_BY_BUILDING: Record<string,string[]> = {
+  'Medina Lacson Building':['Room 101','Room 102','Room 103','Room 201','Room 202','Room 203'],
+  'New CEA Building':['Room 101','Room 102','Room 103','Room 201','Room 204','Room 205'],
+  'CAHS Building':['Room 103','Room 104','Room 105','Room 202','Room 203','Room 204'],
+}
+const EXT_LOCATIONS_BY_BUILDING: Record<string,string[]> = {
+  'Medina Lacson Building':['Hallway Rooms 201-202','Near main staircase'],
+  'New CEA Building':['Hallway near Room 101','Laboratory near Room 103','Hallway Rooms 204-205'],
+  'CAHS Building':['Main hallway 103-104','Hallway Rooms 201-202','Near nursing lab Room 203'],
 }
 
 // ── MAIN DASHBOARD ────────────────────────────────────────────
@@ -285,16 +295,15 @@ export default function Dashboard() {
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [idleWarn,setIdleWarn]=useState(false)
-  const [simDevice,setSimDevice]=useState('')
-  const [simLevel,setSimLevel]=useState('Yellow')
-  const [simLoading,setSimLoading]=useState(false)
   const [exportMenu,setExportMenu]=useState(false)
+  const [exportLoading,setExportLoading]=useState<string|null>(null)
+  const [otpSent,setOtpSent]=useState(false)
+  const [otpLoading,setOtpLoading]=useState(false)
   const idleTimer=useRef<any>(null)
   const warnTimer=useRef<any>(null)
 
   const isAdmin=user?.user_type==='Admin'
 
-  // ── IDLE LOGOUT ───────────────────────────────────────────
   const resetIdle=()=>{
     localStorage.setItem(LAST_ACTIVE_KEY,Date.now().toString())
     setIdleWarn(false)
@@ -324,7 +333,7 @@ export default function Dashboard() {
     }
   },[])
 
-  const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),5000)}
+  const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),6000)}
 
   const api=async(url:string,method='GET',body?:any)=>{
     const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
@@ -351,33 +360,93 @@ export default function Dashboard() {
     router.push('/login')
   }
 
-  // ── FORM VALIDATION ───────────────────────────────────────
-  function validateUserForm():{valid:boolean,errors:Record<string,string>} {
+  // ── OCCUPANCY CHECKS ──────────────────────────────────────
+  function checkDeviceOccupied(building:string, floor:string, room:string, excludeId?:string): string|null {
+    const pos = getRoomPos(building, floor, room)
+    if (!pos) return null // no map slot = no occupancy conflict
+    const existing = devices.find(d =>
+      d.building === building && d.floor === floor && d.room === room && d.device_id !== excludeId
+    )
+    return existing ? `${room} in ${building} (${floor}) already has a device: ${existing.device_id}. Choose a different location.` : null
+  }
+
+  function checkExtOccupied(building:string, floor:string, desc:string, excludeId?:number): string|null {
+    const pos = getExtPos(building, floor, desc)
+    if (!pos) return null
+    const existing = equipment.find(e =>
+      e.building === building && e.floor === floor && e.location_description === desc && e.equipment_id !== excludeId
+    )
+    return existing ? `${desc} in ${building} (${floor}) already has a ${existing.equipment_type} extinguisher. That area is occupied.` : null
+  }
+
+  // ── SAVE USER (admin creates → OTP flow) ──────────────────
+  async function saveUser(){
     const errs:Record<string,string>={}
     if(!form.full_name?.trim()) errs.full_name='Full name is required.'
     const uErr=validateUsername(form.username?.trim()||'')
     if(uErr) errs.username=uErr
-    if(!editId&&!form.password) errs.password='Password is required for new accounts.'
-    if(form.password&&form.password.length<8) errs.password='Password must be at least 8 characters.'
     if(!form.user_type) errs.user_type='Role is required.'
-    if(form.email){const e=validateEmail(form.email.trim());if(e)errs.email=e}
+    if(!form.email?.trim()) errs.email='Email is required to send the OTP.'
+    else { const eErr=validateEmail(form.email.trim()); if(eErr) errs.email=eErr }
     if(form.phone){const p=validatePhone(form.phone.trim());if(p)errs.phone=p}
-    return{valid:Object.keys(errs).length===0,errors:errs}
+    if(Object.keys(errs).length){setFormErrors(errs);return}
+    setFormErrors({})
+
+    const d=await api('/api/users','POST',{
+      full_name:form.full_name.trim(), username:form.username.trim(),
+      user_type:form.user_type, email:form.email.trim(), phone:form.phone||null
+    })
+    if(!d.success){showToast('error','Error',d.message);return}
+
+    // Send OTP
+    setOtpLoading(true)
+    const otp=await api('/api/users/otp','POST',{email:d.email, user_id:d.user_id})
+    setOtpLoading(false)
+    setOtpSent(true)
+    showToast('success','Account Created',`OTP sent to ${d.email}. User must verify to set their password.`)
+    setModal(null);setOtpSent(false);loadUsers()
   }
 
-  // ── SAVE USER ─────────────────────────────────────────────
-  async function saveUser(){
-    const{valid,errors}=validateUserForm()
-    if(!valid){setFormErrors(errors);return}
-    setFormErrors({})
-    // Admin cannot change password — strip it from edit requests
-    const payload=editId
-      ? {user_id:editId,full_name:form.full_name,username:form.username,user_type:form.user_type,email:form.email,phone:form.phone}
-      : {...form}
-    const d=await api('/api/users',editId?'PUT':'POST',payload)
+  // ── ROLE UPDATE (admin only) ──────────────────────────────
+  async function saveRole(){
+    if(!form.user_type){showToast('error','Error','Role is required.');return}
+    const d=await api('/api/users','PUT',{mode:'role', admin_id:user.user_id, user_id:editId, user_type:form.user_type})
     if(!d.success){showToast('error','Error',d.message);return}
-    showToast('success',editId?'User Updated':'Account Created',d.message)
+    showToast('success','Role Updated','User role changed.')
     setModal(null);loadUsers()
+  }
+
+  // ── SELF EDIT (own profile) ───────────────────────────────
+  async function saveSelfProfile(){
+    const errs:Record<string,string>={}
+    if(!form.full_name?.trim()) errs.full_name='Full name is required.'
+    const uErr=validateUsername(form.username?.trim()||'')
+    if(uErr) errs.username=uErr
+    if(form.email){const e=validateEmail(form.email.trim());if(e)errs.email=e}
+    if(form.phone){const p=validatePhone(form.phone.trim());if(p)errs.phone=p}
+    if(Object.keys(errs).length){setFormErrors(errs);return}
+    setFormErrors({})
+    const d=await api('/api/users','PUT',{mode:'self', user_id:user.user_id, full_name:form.full_name, username:form.username, email:form.email||'', phone:form.phone||''})
+    if(!d.success){showToast('error','Error',d.message);return}
+    // Update session
+    const updated={...user,...d.user}
+    localStorage.setItem(SESSION_KEY,JSON.stringify(updated))
+    setUser(updated)
+    showToast('success','Profile Updated','Your profile has been updated.')
+    setModal(null);loadUsers()
+  }
+
+  // ── CHANGE OWN PASSWORD ───────────────────────────────────
+  async function changePassword(){
+    if(!form.current_password){setFormErrors({current_password:'Current password required.'});return}
+    if(!form.new_password){setFormErrors({new_password:'New password required.'});return}
+    if(form.new_password.length<8){setFormErrors({new_password:'Minimum 8 characters.'});return}
+    if(form.new_password!==form.confirm_password){setFormErrors({confirm_password:'Passwords do not match.'});return}
+    setFormErrors({})
+    const d=await api('/api/users/set-password','PUT',{user_id:user.user_id, current_password:form.current_password, new_password:form.new_password})
+    if(!d.success){showToast('error','Error',d.message);return}
+    showToast('success','Password Changed','Your password has been updated.')
+    setModal(null)
   }
 
   // ── SAVE DEVICE ───────────────────────────────────────────
@@ -385,8 +454,15 @@ export default function Dashboard() {
     const errs:Record<string,string>={}
     if(!form.device_id?.trim()) errs.device_id='Device ID is required.'
     if(!form.device_name?.trim()) errs.device_name='Device name is required.'
+    if(!form.building) errs.building='Building is required.'
+
+    if(!Object.keys(errs).length) {
+      const occ=checkDeviceOccupied(form.building, form.floor||'1F', form.room||ROOMS_BY_BUILDING[form.building]?.[0], editId||undefined)
+      if(occ) errs.room=occ
+    }
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
+
     const d=await api('/api/devices',editId?'PUT':'POST',{...form,device_id:form.device_id?.toUpperCase()})
     if(!d.success){showToast('error','Error',d.message);return}
     showToast('success',editId?'Device Updated':'Device Added','Saved.')
@@ -398,11 +474,22 @@ export default function Dashboard() {
     const errs:Record<string,string>={}
     if(!form.equipment_type) errs.equipment_type='Type is required.'
     if(!form.building) errs.building='Building is required.'
+    if(!form.location_description) errs.location_description='Location is required.'
+
+    if(!Object.keys(errs).length) {
+      const occ=checkExtOccupied(form.building, form.floor||'1F', form.location_description, editId||undefined)
+      if(occ) errs.location_description=occ
+    }
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
-    const d=await api('/api/equipment','POST',form)
+
+    const method = editId ? 'PUT' : 'POST'
+    const payload = editId
+      ? { equipment_id: editId, ...form }
+      : form
+    const d=await api('/api/equipment',method,payload)
     if(!d.success){showToast('error','Error',d.message);return}
-    showToast('success','Equipment Added','Saved.')
+    showToast('success',editId?'Equipment Updated':'Equipment Added','Saved.')
     setModal(null);loadEquipment()
   }
 
@@ -420,15 +507,16 @@ export default function Dashboard() {
     if(deleteTarget.type==='equipment')loadEquipment()
   }
 
-  // ── SIMULATE ALERT ────────────────────────────────────────
-  async function runSimulation(){
-    if(!simDevice){showToast('error','Select Device','Please select a device to simulate.');return}
-    setSimLoading(true)
-    const d=await api('/api/simulate','POST',{device_id:simDevice,threat_level:simLevel})
-    setSimLoading(false)
-    if(!d.success){showToast('error','Simulation Failed',d.message);return}
-    showToast('success','Alert Simulated',`${simLevel} alert logged for ${simDevice}. Refresh map to see.`)
-    loadIncidents()
+  // ── EXPORT WITH LOADING ───────────────────────────────────
+  async function handleExport(type:string){
+    setExportMenu(false)
+    setExportLoading(type)
+    try {
+      if(type==='csv') exportCSV(incidents)
+      else if(type==='txt') exportTXT(incidents)
+      else if(type==='pdf') await exportPDF(incidents)
+      else if(type==='docx') await exportDOCX(incidents)
+    } finally { setExportLoading(null) }
   }
 
   const online=devices.filter(d=>d.status==='Online').length
@@ -465,10 +553,15 @@ export default function Dashboard() {
 
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
+  const sel=(key:string,options:string[],disabled=false)=>(
+    <select value={form[key]||options[0]} onChange={e=>setForm({...form,[key]:e.target.value})} disabled={disabled}
+      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}>
+      {options.map(o=><option key={o} value={o}>{o}</option>)}
+    </select>
+  )
+
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
-
-      {/* IDLE WARNING */}
       {idleWarn&&(
         <div style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,background:'rgba(234,179,8,0.95)',color:'#000',padding:'10px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'.85rem',fontWeight:600}}>
           <span>⚠️ You'll be logged out in 2 minutes due to inactivity.</span>
@@ -495,8 +588,16 @@ export default function Dashboard() {
         </nav>
         <div style={{padding:'16px 22px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',background:'var(--panel2)',borderRadius:8,marginBottom:10}}>
-            <div style={{width:30,height:30,background:'linear-gradient(135deg,#0072ff,#00c2ff)',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:600,flexShrink:0}}>{initials(user.full_name)}</div>
-            <div><div style={{fontSize:'.8rem',fontWeight:500}}>{user.full_name}</div><div style={{fontSize:'.65rem',color:'var(--muted)'}}>{user.user_type}</div></div>
+            <div style={{width:30,height:30,background:'linear-gradient(135deg,#0072ff,#00c2ff)',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:600,flexShrink:0}}>{user&&initials(user.full_name)}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:'.8rem',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.full_name}</div>
+              <div style={{fontSize:'.65rem',color:'var(--muted)'}}>{user?.user_type}</div>
+            </div>
+          </div>
+          {/* My Account actions */}
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            <button onClick={()=>{setForm({full_name:user.full_name,username:user.username,email:user.email||'',phone:user.phone||''});setFormErrors({});setModal('selfEdit')}} style={{flex:1,padding:'6px 0',background:'rgba(0,194,255,.08)',border:'1px solid rgba(0,194,255,.2)',borderRadius:6,color:'var(--accent)',fontSize:'.68rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>✏️ Profile</button>
+            <button onClick={()=>{setForm({});setFormErrors({});setModal('changePassword')}} style={{flex:1,padding:'6px 0',background:'rgba(234,179,8,.08)',border:'1px solid rgba(234,179,8,.2)',borderRadius:6,color:'var(--yellow)',fontSize:'.68rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>🔑 Password</button>
           </div>
           <button onClick={()=>doLogout()} style={{width:'100%',padding:8,background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:6,color:'var(--red)',fontSize:'.78rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>🚪 &nbsp;Sign Out</button>
         </div>
@@ -510,15 +611,13 @@ export default function Dashboard() {
             <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:14}}>
-            <span style={{fontSize:'.68rem',padding:'3px 10px',borderRadius:20,fontFamily:'var(--mono)',fontWeight:600,textTransform:'uppercase',background:chipBg,color:chipColor,border:`1px solid ${chipBorder}`}}>{user.user_type}</span>
+            <span style={{fontSize:'.68rem',padding:'3px 10px',borderRadius:20,fontFamily:'var(--mono)',fontWeight:600,textTransform:'uppercase',background:chipBg,color:chipColor,border:`1px solid ${chipBorder}`}}>{user?.user_type}</span>
             <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'.75rem',color:'var(--green)',fontFamily:'var(--mono)'}}><div style={{width:8,height:8,background:'var(--green)',borderRadius:'50%'}}/> SYSTEM LIVE</div>
             <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>{clock}</div>
           </div>
         </div>
 
         <div style={{padding:'24px 28px',flex:1}}>
-
-          {/* RED ALERT BAR */}
           {redInc&&(
             <div style={{background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:8,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,marginBottom:16,fontSize:'.8rem',color:'var(--red)'}}>
               🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
@@ -536,23 +635,6 @@ export default function Dashboard() {
                     <div style={{fontSize:'2rem',fontWeight:700,fontFamily:'var(--mono)',color:s.color}}>{s.value}</div>
                   </div>
                 ))}
-              </div>
-
-              {/* Simulate panel */}
-              <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 20px',marginBottom:20}}>
-                <div style={{fontWeight:600,fontSize:'.875rem',marginBottom:12}}>🔬 Simulate Alert <span style={{fontSize:'.7rem',color:'var(--muted)',fontWeight:400,marginLeft:8}}>Demo mode — no hardware needed</span></div>
-                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-                  <select value={simDevice} onChange={e=>setSimDevice(e.target.value)} style={{background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.82rem',minWidth:180}}>
-                    <option value=''>Select Device…</option>
-                    {devices.filter(d=>d.status==='Online').map(d=><option key={d.device_id} value={d.device_id}>{d.device_id} — {d.room}</option>)}
-                  </select>
-                  <select value={simLevel} onChange={e=>setSimLevel(e.target.value)} style={{background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.82rem'}}>
-                    {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
-                  </select>
-                  <button onClick={runSimulation} disabled={simLoading} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',opacity:simLoading?.6:1}}>
-                    {simLoading?'Sending…':'Send Alert'}
-                  </button>
-                </div>
               </div>
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 380px',gap:16}}>
@@ -573,8 +655,8 @@ export default function Dashboard() {
                         <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
                           <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
                           <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
-                          <div><Badge status={d.status}/></div>
-                          <div><ThreatBadge level={threat}/></div>
+                          <Badge status={d.status}/>
+                          <ThreatBadge level={threat}/>
                           <div style={{fontFamily:'var(--mono)',fontSize:'.78rem',color:pmColor(pm)}}>{d.status==='Online'?pm.toFixed(1)+' µg/m³':'—'}</div>
                         </div>
                       )
@@ -657,18 +739,20 @@ export default function Dashboard() {
                   {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
                 <div style={{flex:1}}/>
-                {/* Export dropdown */}
                 <div style={{position:'relative'}}>
-                  <button onClick={()=>setExportMenu(!exportMenu)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>⬇ Export ▾</button>
+                  <button onClick={()=>setExportMenu(!exportMenu)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)',display:'flex',alignItems:'center',gap:6}}>
+                    {exportLoading ? '⏳ Exporting…' : '⬇ Export ▾'}
+                  </button>
                   {exportMenu&&(
-                    <div style={{position:'absolute',right:0,top:'110%',background:'var(--panel)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',zIndex:100,minWidth:160,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
+                    <div style={{position:'absolute',right:0,top:'110%',background:'var(--panel)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',zIndex:100,minWidth:180,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
                       {[
-                        {label:'📄 Export as CSV',fn:()=>{exportCSV(incidents);setExportMenu(false)}},
-                        {label:'📝 Export as TXT',fn:()=>{exportTXT(incidents);setExportMenu(false)}},
-                        {label:'🔢 Export as JSON',fn:()=>{exportJSON(incidents);setExportMenu(false)}},
-                        {label:'🖨 Print / Save PDF',fn:()=>{printReport(incidents);setExportMenu(false)}},
+                        {label:'📊 Export as CSV',key:'csv'},
+                        {label:'📝 Export as TXT',key:'txt'},
+                        {label:'📄 Download as PDF',key:'pdf'},
+                        {label:'📃 Download as Word',key:'docx'},
                       ].map(item=>(
-                        <div key={item.label} onClick={item.fn} style={{padding:'10px 16px',cursor:'pointer',fontSize:'.82rem',color:'var(--text)',borderBottom:'1px solid var(--border)'}}
+                        <div key={item.key} onClick={()=>handleExport(item.key)}
+                          style={{padding:'10px 16px',cursor:'pointer',fontSize:'.82rem',color:'var(--text)',borderBottom:'1px solid var(--border)'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='var(--panel2)')}
                           onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
                           {item.label}
@@ -703,11 +787,11 @@ export default function Dashboard() {
               <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
                 <input value={userSearch} onChange={e=>setUserSearch(e.target.value)} placeholder="🔍  Search users..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setEditId(null);setForm({user_type:'Security'});setFormErrors({});setModal('user')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add User</button>
+                <button onClick={()=>{setForm({user_type:'Security'});setFormErrors({});setOtpSent(false);setModal('user')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add User</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1.5fr 1.2fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Name</span><span>Role</span><span>Email</span><span>Phone</span><span>Actions</span>
+                  <span>Name</span><span>Role</span><span>Email</span><span>Status</span><span>Actions</span>
                 </div>
                 {users.filter(u=>!userSearch||u.full_name.toLowerCase().includes(userSearch.toLowerCase())||u.username.toLowerCase().includes(userSearch.toLowerCase())).map(u=>(
                   <div key={u.user_id} style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1.5fr 1.2fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
@@ -716,15 +800,23 @@ export default function Dashboard() {
                       <div><div style={{fontWeight:500}}>{u.full_name}</div><div style={{color:'var(--muted)',fontSize:'.72rem',fontFamily:'var(--mono)'}}>@{u.username}</div></div>
                     </div>
                     <RoleBadge role={u.user_type}/>
-                    <div style={{color:'var(--muted)'}}>{u.email||'—'}</div>
-                    <div style={{fontFamily:'var(--mono)',fontSize:'.75rem'}}>{u.phone||'—'}</div>
+                    <div style={{color:'var(--muted)',fontSize:'.75rem'}}>{u.email||'—'}</div>
+                    <div>
+                      {u.is_verified
+                        ? <span style={{fontSize:'.7rem',color:'var(--green)',fontWeight:600}}>✅ Active</span>
+                        : <span style={{fontSize:'.7rem',color:'var(--yellow)',fontWeight:600}}>⏳ Pending OTP</span>}
+                    </div>
                     <div style={{display:'flex',gap:6}}>
-                      <button onClick={()=>{setEditId(u.user_id);setForm({full_name:u.full_name,username:u.username,user_type:u.user_type,email:u.email||'',phone:u.phone||''});setFormErrors({});setModal('user')}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>✏️</button>
-                      <button onClick={()=>{setDeleteTarget({type:'user',id:u.user_id,label:u.full_name});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>🗑</button>
+                      {/* Admin: only change role */}
+                      <button title="Change Role" onClick={()=>{setEditId(u.user_id);setForm({user_type:u.user_type});setFormErrors({});setModal('changeRole')}} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>🏷️</button>
+                      <button title="Delete User" onClick={()=>{setDeleteTarget({type:'user',id:u.user_id,label:u.full_name});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem',padding:'3px 6px',borderRadius:4}}>🗑</button>
                     </div>
                   </div>
                 ))}
                 {users.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No users found.</div>}
+              </div>
+              <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)',padding:'0 4px'}}>
+                ℹ️ Admin can only change user roles or delete accounts. Users manage their own profile and password from their sidebar.
               </div>
             </div>
           )}
@@ -735,7 +827,7 @@ export default function Dashboard() {
               <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setEditId(null);setForm({building:'Medina Lacson Building',floor:'1F',room:'Room 101',status:'Online'});setFormErrors({});setModal('device')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
+                <button onClick={()=>{setEditId(null);setForm({building:'Medina Lacson Building',floor:'1F',room:ROOMS_BY_BUILDING['Medina Lacson Building'][0],status:'Online'});setFormErrors({});setModal('device')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
@@ -766,20 +858,21 @@ export default function Dashboard() {
             <div>
               <div style={{display:'flex',marginBottom:16}}>
                 <div style={{flex:1}}/>
-                <button onClick={()=>{setForm({equipment_type:'ABC',building:'Medina Lacson Building',floor:'1F',status:'Active',last_inspection:new Date().toISOString().split('T')[0]});setFormErrors({});setModal('equipment')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Equipment</button>
+                <button onClick={()=>{setEditId(null);setForm({equipment_type:'ABC',building:'Medina Lacson Building',floor:'1F',status:'Active',location_description:EXT_LOCATIONS_BY_BUILDING['Medina Lacson Building'][0],last_inspection:new Date().toISOString().split('T')[0]});setFormErrors({});setModal('equipment')}} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Equipment</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Type</span><span>Building</span><span>Location</span><span>Last Inspection</span><span>Status</span>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 80px',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Type</span><span>Building</span><span>Location</span><span>Last Inspection</span><span>Status</span><span>Actions</span>
                 </div>
                 {equipment.map(e=>(
-                  <div key={e.equipment_id} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
+                  <div key={e.equipment_id} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 80px',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
                     <div style={{fontWeight:600}}>{e.equipment_type} <span style={{fontSize:'.7rem',color:'var(--muted)',fontWeight:400}}>Extinguisher</span></div>
                     <div>{e.building}</div>
                     <div style={{color:'var(--muted)'}}>{e.floor} · {e.location_description||'—'}</div>
                     <div style={{fontFamily:'var(--mono)',fontSize:'.75rem',color:'var(--muted)'}}>{e.last_inspection||'—'}</div>
-                    <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <Badge status={e.status}/>
+                    <Badge status={e.status}/>
+                    <div style={{display:'flex',gap:6}}>
+                      <button onClick={()=>{setEditId(e.equipment_id);setForm({equipment_type:e.equipment_type,building:e.building,floor:e.floor,location_description:e.location_description,status:e.status,last_inspection:e.last_inspection||''});setFormErrors({});setModal('equipment')}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:'.9rem'}}>✏️</button>
                       <button onClick={()=>{setDeleteTarget({type:'equipment',id:e.equipment_id,label:e.equipment_type});setModal('delete')}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'.9rem'}}>🗑</button>
                     </div>
                   </div>
@@ -795,15 +888,17 @@ export default function Dashboard() {
       {modal&&(
         <div onClick={e=>{if(e.target===e.currentTarget)setModal(null)}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',backdropFilter:'blur(4px)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center'}}>
 
-          {/* USER MODAL */}
+          {/* CREATE USER (admin) */}
           {modal==='user'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:500,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:'1rem',fontWeight:600}}>{editId?'Edit User Account':'Add User Account'}</div>
+                <div style={{fontSize:'1rem',fontWeight:600}}>Create User Account</div>
                 <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
               </div>
               <div style={{padding:22}}>
-                {editId&&<div style={{background:'rgba(0,194,255,.08)',border:'1px solid rgba(0,194,255,.2)',borderRadius:6,padding:'8px 12px',fontSize:'.75rem',color:'var(--accent)',marginBottom:16}}>ℹ️ Passwords are not visible or editable by Admin for user privacy. Only the account holder can change their password.</div>}
+                <div style={{background:'rgba(0,194,255,.08)',border:'1px solid rgba(0,194,255,.2)',borderRadius:6,padding:'10px 14px',fontSize:'.78rem',color:'var(--accent)',marginBottom:16}}>
+                  📧 An OTP will be sent to the user's email. They must verify and set their own password before the account becomes active.
+                </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
                   <div>{lbl('Full Name')}{input('full_name','Juan Dela Cruz')}</div>
                   <div>{lbl('Username')}{input('username','jdelacruz')}</div>
@@ -811,24 +906,86 @@ export default function Dashboard() {
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
                   <div>
                     {lbl('Role')}
-                    <select value={form.user_type||'Security'} onChange={e=>{setForm({...form,user_type:e.target.value});setFormErrors({...formErrors,user_type:''})}} style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.user_type?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                    <select value={form.user_type||'Security'} onChange={e=>setForm({...form,user_type:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
                       {['Admin','Security','DRRM','Campus Personnel'].map(r=><option key={r} value={r}>{r}</option>)}
                     </select>
-                    {formErrors.user_type&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.user_type}</div>}
                   </div>
-                  {!editId&&(
-                    <div>{lbl('Password (min 8 chars)')}{input('password','••••••••','password')}</div>
-                  )}
+                  <div>{lbl('Phone (optional)')}{input('phone','09123456789')}</div>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                  <div>{lbl('Email')}{input('email','email@bpsu.edu.ph','email')}</div>
-                  <div>{lbl('Phone (09XXXXXXXXX)')}{input('phone','09123456789')}</div>
-                </div>
-                {!editId&&form.email&&<div style={{marginTop:12,background:'rgba(34,197,94,.08)',border:'1px solid rgba(34,197,94,.2)',borderRadius:6,padding:'8px 12px',fontSize:'.75rem',color:'var(--green)'}}>📧 A verification email will be sent to {form.email} after account creation.</div>}
+                <div>{lbl('Email (required — OTP will be sent here)')}{input('email','user@bpsu.edu.ph','email')}</div>
+                {formErrors.email&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.email}</div>}
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
-                <button onClick={saveUser} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Save Account</button>
+                <button onClick={saveUser} disabled={otpLoading} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',opacity:otpLoading?.6:1}}>
+                  {otpLoading?'Sending OTP…':'Create & Send OTP'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* CHANGE ROLE (admin only) */}
+          {modal==='changeRole'&&(
+            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:360,maxWidth:'95vw',overflow:'hidden'}}>
+              <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontSize:'1rem',fontWeight:600}}>Change User Role</div>
+                <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
+              </div>
+              <div style={{padding:22}}>
+                <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:6,padding:'8px 12px',fontSize:'.75rem',color:'var(--orange)',marginBottom:16}}>
+                  ⚠️ Admins can only change the user's role. Profile and password are managed by the user themselves.
+                </div>
+                {lbl('New Role')}
+                <select value={form.user_type||'Security'} onChange={e=>setForm({...form,user_type:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                  {['Admin','Security','DRRM','Campus Personnel'].map(r=><option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
+                <button onClick={saveRole} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Save Role</button>
+              </div>
+            </div>
+          )}
+
+          {/* SELF EDIT (own profile) */}
+          {modal==='selfEdit'&&(
+            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:460,maxWidth:'95vw',overflow:'hidden'}}>
+              <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontSize:'1rem',fontWeight:600}}>Edit My Profile</div>
+                <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
+              </div>
+              <div style={{padding:22}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+                  <div>{lbl('Full Name')}{input('full_name','Juan Dela Cruz')}</div>
+                  <div>{lbl('Username')}{input('username','jdelacruz')}</div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  <div>{lbl('Email')}{input('email','email@bpsu.edu.ph','email')}</div>
+                  <div>{lbl('Phone')}{input('phone','09123456789')}</div>
+                </div>
+              </div>
+              <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
+                <button onClick={saveSelfProfile} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Save Profile</button>
+              </div>
+            </div>
+          )}
+
+          {/* CHANGE PASSWORD (self) */}
+          {modal==='changePassword'&&(
+            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:400,maxWidth:'95vw',overflow:'hidden'}}>
+              <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontSize:'1rem',fontWeight:600}}>Change Password</div>
+                <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
+              </div>
+              <div style={{padding:22,display:'flex',flexDirection:'column',gap:14}}>
+                <div>{lbl('Current Password')}{input('current_password','••••••••','password')}</div>
+                <div>{lbl('New Password (min 8 chars)')}{input('new_password','••••••••','password')}</div>
+                <div>{lbl('Confirm New Password')}{input('confirm_password','••••••••','password')}</div>
+              </div>
+              <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
+                <button onClick={changePassword} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Change Password</button>
               </div>
             </div>
           )}
@@ -845,21 +1002,31 @@ export default function Dashboard() {
                   <div>{lbl('Device ID')}{input('device_id','AG-009','text',!!editId)}</div>
                   <div>{lbl('Device Name')}{input('device_name','AeroGuard Unit 9')}</div>
                 </div>
-                <div style={{marginBottom:16}}>
+                <div style={{marginBottom:14}}>
                   {lbl('Building')}
-                  <select value={form.building||'Medina Lacson Building'} onChange={e=>setForm({...form,building:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {['Medina Lacson Building','New CEA Building','CAHS Building'].map(b=><option key={b} value={b}>{b}</option>)}
-                  </select>
+                  {sel('building', BUILDINGS_LIST)}
+                  {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
-                  {[{k:'floor',l:'Floor',o:['1F','2F']},{k:'room',l:'Room',o:['Room 101','Room 102','Room 103','Room 104','Room 105','Room 201','Room 202','Room 203','Room 204','Room 205']},{k:'status',l:'Status',o:['Online','Offline','Maintenance']}].map(f=>(
-                    <div key={f.k}>
-                      {lbl(f.l)}
-                      <select value={form[f.k]||f.o[0]} onChange={e=>setForm({...form,[f.k]:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                        {f.o.map(o=><option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-                  ))}
+                  <div>
+                    {lbl('Floor')}
+                    {sel('floor', FLOORS_LIST)}
+                  </div>
+                  <div>
+                    {lbl('Room')}
+                    <select value={form.room||(ROOMS_BY_BUILDING[form.building]?.[0]||'')} onChange={e=>setForm({...form,room:e.target.value})}
+                      style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.room?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      {(ROOMS_BY_BUILDING[form.building]||[]).map(r=><option key={r} value={r}>{r}</option>)}
+                    </select>
+                    {formErrors.room&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.room}</div>}
+                  </div>
+                  <div>
+                    {lbl('Status')}
+                    {sel('status', ['Online','Offline','Maintenance'])}
+                  </div>
+                </div>
+                <div style={{marginTop:12,fontSize:'.75rem',color:'var(--muted)'}}>
+                  💡 Only rooms with a map slot will appear on the 2D campus map.
                 </div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
@@ -873,26 +1040,47 @@ export default function Dashboard() {
           {modal==='equipment'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:480,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:'1rem',fontWeight:600}}>Add Fire Equipment</div>
+                <div style={{fontSize:'1rem',fontWeight:600}}>{editId?'Edit Fire Equipment':'Add Fire Equipment'}</div>
                 <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
               </div>
               <div style={{padding:22}}>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-                  {[{k:'equipment_type',l:'Type',o:['ABC','CO2','Water','Foam']},{k:'building',l:'Building',o:['Medina Lacson Building','New CEA Building','CAHS Building']},{k:'floor',l:'Floor',o:['1F','2F']},{k:'status',l:'Status',o:['Active','Maintenance','Expired']}].map(f=>(
-                    <div key={f.k}>
-                      {lbl(f.l)}
-                      <select value={form[f.k]||f.o[0]} onChange={e=>setForm({...form,[f.k]:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                        {f.o.map(o=><option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-                  ))}
+                  <div>
+                    {lbl('Type')}
+                    {sel('equipment_type', ['ABC','CO2','Water','Foam'])}
+                  </div>
+                  <div>
+                    {lbl('Status')}
+                    {sel('status', ['Active','Maintenance','Expired'])}
+                  </div>
                 </div>
-                <div style={{marginBottom:16}}>{lbl('Location Description')}{input('location_description','e.g. Hallway near Room 201')}</div>
-                <div>{lbl('Last Inspection Date')}{input('last_inspection','','date')}</div>
+                <div style={{marginBottom:14}}>
+                  {lbl('Building')}
+                  {sel('building', BUILDINGS_LIST)}
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+                  <div>
+                    {lbl('Floor')}
+                    {sel('floor', FLOORS_LIST)}
+                  </div>
+                  <div>{lbl('Last Inspection Date')}{input('last_inspection','','date')}</div>
+                </div>
+                <div>
+                  {lbl('Location (map slot)')}
+                  <select value={form.location_description||(EXT_LOCATIONS_BY_BUILDING[form.building]?.[0]||'')}
+                    onChange={e=>setForm({...form,location_description:e.target.value})}
+                    style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.location_description?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                    {(EXT_LOCATIONS_BY_BUILDING[form.building]||[]).map(l=><option key={l} value={l}>{l}</option>)}
+                  </select>
+                  {formErrors.location_description&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.location_description}</div>}
+                </div>
+                <div style={{marginTop:10,fontSize:'.75rem',color:'var(--muted)'}}>
+                  💡 Each map location can only hold one extinguisher. Occupied slots will show an error.
+                </div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
-                <button onClick={saveEquipment} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Save Equipment</button>
+                <button onClick={saveEquipment} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>{editId?'Update Equipment':'Save Equipment'}</button>
               </div>
             </div>
           )}
