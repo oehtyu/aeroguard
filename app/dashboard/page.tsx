@@ -375,7 +375,8 @@ export default function Dashboard() {
     setUser(JSON.parse(stored))
     loadDevices();loadIncidents()
     const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
+    // was: const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
+  const r=setInterval(()=>{loadDevices();loadIncidents()},5000)
     const evts=['mousedown','mousemove','keydown','scroll','touchstart','click']
     evts.forEach(e=>window.addEventListener(e,resetIdle,{passive:true}))
     resetIdle()
@@ -705,19 +706,19 @@ export default function Dashboard() {
                   </div>
                   <div style={{maxHeight:320,overflowY:'auto'}}>
                     {devices.map(d=>{
-                      const latest=incidents.find(i=>i.device_id===d.device_id)
-                      const threat=latest?.threat_level||'Gray'
-                      const pm=parseFloat(latest?.pm25_value||'12.5')
-                      return(
-                        <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
-                          <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
-                          <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
-                          <Badge status={d.status}/>
-                          <ThreatBadge level={threat}/>
-                          <div style={{fontFamily:'var(--mono)',fontSize:'.78rem',color:pmColor(pm)}}>{d.status==='Online'?pm.toFixed(1)+' µg/m³':'—'}</div>
-                        </div>
-                      )
-                    })}
+  const latest=incidents.find(i=>i.device_id===d.device_id)
+  const threat=d.current_threat||latest?.threat_level||'Gray'
+  const pm=d.pm25_value!=null?parseFloat(d.pm25_value):null
+  return(
+    <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
+      <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
+      <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
+      <Badge status={d.status}/>
+      <ThreatBadge level={threat}/>
+      <div style={{fontFamily:'var(--mono)',fontSize:'.78rem',color:pmColor(pm||0)}}>{d.status==='Online'&&pm!=null?pm.toFixed(1)+' µg/m³':'—'}</div>
+    </div>
+  )
+})}
                     {devices.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No devices registered.</div>}
                   </div>
                 </div>
