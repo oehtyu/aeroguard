@@ -4,7 +4,7 @@ import sql from '@/lib/db';
 export async function GET() {
   const rows = await sql`
     SELECT equipment_id, equipment_type, building, floor, location_description, status, last_inspection
-    FROM equipment ORDER BY equipment_id ASC
+    FROM fire_equipment ORDER BY equipment_id ASC
   `;
   return NextResponse.json({ success: true, data: rows });
 }
@@ -16,14 +16,14 @@ export async function POST(req: NextRequest) {
   if (!location_description) return NextResponse.json({ success: false, message: 'Location is required.' });
 
   const existing = await sql`
-    SELECT equipment_id FROM equipment
+    SELECT equipment_id FROM fire_equipment
     WHERE building = ${building} AND floor = ${floor} AND location_description = ${location_description}
   `;
   if (existing.length > 0)
     return NextResponse.json({ success: false, message: `That location already has a fire extinguisher. Choose a different spot.` });
 
   await sql`
-    INSERT INTO equipment (equipment_type, building, floor, location_description, status, last_inspection)
+    INSERT INTO fire_equipment (equipment_type, building, floor, location_description, status, last_inspection)
     VALUES (${equipment_type}, ${building}, ${floor || '1F'}, ${location_description}, ${status || 'Active'}, ${last_inspection || null})
   `;
   return NextResponse.json({ success: true, message: 'Equipment added.' });
@@ -34,7 +34,7 @@ export async function PUT(req: NextRequest) {
   if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' });
 
   const existing = await sql`
-    SELECT equipment_id FROM equipment
+    SELECT equipment_id FROM fire_equipment
     WHERE building = ${building} AND floor = ${floor} AND location_description = ${location_description}
     AND equipment_id != ${equipment_id}
   `;
@@ -42,8 +42,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, message: `That location already has a fire extinguisher. Choose a different spot.` });
 
   await sql`
-    UPDATE equipment
-    SET equipment_type=${equipment_type}, building=${building}, floor=${floor},
+    UPDATE fire_equipment SET equipment_type=${equipment_type}, building=${building}, floor=${floor},
         location_description=${location_description}, status=${status}, last_inspection=${last_inspection || null}
     WHERE equipment_id=${equipment_id}
   `;
@@ -53,6 +52,6 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const { equipment_id } = await req.json();
   if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' });
-  await sql`DELETE FROM equipment WHERE equipment_id=${equipment_id}`;
+  await sql`DELETE FROM fire_equipment WHERE equipment_id=${equipment_id}`;
   return NextResponse.json({ success: true, message: 'Equipment deleted.' });
 }
