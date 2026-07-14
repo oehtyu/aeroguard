@@ -22,12 +22,18 @@ export async function POST(req: NextRequest) {
   await sql`UPDATE users SET login_otp_code=${otp}, login_otp_expires_at=${expiresAt.toISOString()} WHERE user_id=${acct.user_id}`;
 
   const resendKey = process.env.RESEND_API_KEY;
-  if (resendKey) {
-    await fetch('https://api.resend.com/emails', {
+
+  if (!resendKey) {
+    console.error('[LOGIN OTP] RESEND_API_KEY is not set — email was NOT sent.');
+    return NextResponse.json({ success: false, message: 'Server is missing RESEND_API_KEY. Contact the developer.' });
+  }
+
+  try {
+    const resendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'AeroGuard BPSU <noreply@aeroguard.bpsu.edu.ph>',
+        from: 'AeroGuard BPSU <onboarding@resend.dev>',
         to: acct.email,
         subject: 'AeroGuard — Your Login Code',
         html: `
@@ -48,6 +54,18 @@ export async function POST(req: NextRequest) {
           </div>`
       })
     });
+
+    const resendData = await resendRes.json();
+
+    if (!resendRes.ok) {
+      console.error('[LOGIN OTP] Resend API error:', resendRes.status, resendData);
+      return NextResponse.json({ success: false, message: `Resend rejected the email: ${resendData?.message || resendRes.statusText}` });
+    }
+
+    console.log('[LOGIN OTP] Resend accepted email, id:', resendData?.id);
+  } catch (err: any) {
+    console.error('[LOGIN OTP] Failed to reach Resend:', err);
+    return NextResponse.json({ success: false, message: `Failed to send email: ${err.message}` });
   }
 
   return NextResponse.json({ success: true, requiresOtp: true, message: `Code sent to ${acct.email}.`, user_id: acct.user_id });

@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import { writeFileSync, readFileSync, unlinkSync } from 'fs';
@@ -109,7 +110,6 @@ Packer.toBuffer(doc).then(buf => { writeFileSync('${tmpDocx}', buf); });
     unlinkSync(tmpJson);
     unlinkSync(tmpJs);
     unlinkSync(tmpDocx);
-
     return new NextResponse(docxBuffer, {
       status: 200,
       headers: {
@@ -123,4 +123,5 @@ Packer.toBuffer(doc).then(buf => { writeFileSync('${tmpDocx}', buf); });
     try { unlinkSync(tmpDocx) } catch {}
     return NextResponse.json({ success: false, message: 'DOCX generation failed: ' + err.message });
   }
+
 }
