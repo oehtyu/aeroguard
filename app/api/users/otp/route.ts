@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'AeroGuard BPSU <onboarding@resend.dev>',
+        from: 'AeroGuard BPSU <noreply@aeroguard-bpsu.xyz>',
         to: email,
         subject: 'AeroGuard — Your OTP Code',
         html: `
