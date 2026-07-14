@@ -442,10 +442,14 @@ export default function Dashboard() {
     const d=await api('/api/users','POST',{full_name:form.full_name.trim(),username:form.username.trim(),user_type:form.user_type,email:form.email.trim(),phone:form.phone||null})
     if(!d.success){showToast('error','Error',d.message);return}
     setOtpLoading(true)
-    await api('/api/users/otp','POST',{email:d.email,user_id:d.user_id})
-    setOtpLoading(false)
-    showToast('success','Account Created',`OTP sent to ${d.email}.`)
-    setModal(null);loadUsers()
+const otpResult = await api('/api/users/otp','POST',{email:d.email,user_id:d.user_id})
+setOtpLoading(false)
+if(!otpResult.success){
+  showToast('error','Account Created — Email Failed', otpResult.message || 'The account was created but the OTP email could not be sent.')
+} else {
+  showToast('success','Account Created',`OTP sent to ${d.email}.`)
+}
+setModal(null);loadUsers()
   }
 
   async function saveRole(){
