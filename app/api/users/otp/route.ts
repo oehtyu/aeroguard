@@ -18,12 +18,21 @@ export async function POST(req: NextRequest) {
 
   // Send via Resend
   const resendKey = process.env.RESEND_API_KEY;
-  if (resendKey) {
-    await fetch('https://api.resend.com/emails', {
+
+  if (!resendKey) {
+    console.error('[OTP] RESEND_API_KEY is not set — email was NOT sent.');
+    return NextResponse.json({
+      success: false,
+      message: 'Server is missing RESEND_API_KEY. OTP was generated but no email was sent. Contact the developer.'
+    });
+  }
+
+  try {
+    const resendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'AeroGuard BPSU <noreply@aeroguard.bpsu.edu.ph>',
+        from: 'AeroGuard BPSU <onboarding@resend.dev>',
         to: email,
         subject: 'AeroGuard — Your OTP Code',
         html: `
@@ -52,6 +61,21 @@ export async function POST(req: NextRequest) {
         `
       })
     });
+
+    const resendData = await resendRes.json();
+
+    if (!resendRes.ok) {
+      console.error('[OTP] Resend API error:', resendRes.status, resendData);
+      return NextResponse.json({
+        success: false,
+        message: `Resend rejected the email: ${resendData?.message || resendRes.statusText}`
+      });
+    }
+
+    console.log('[OTP] Resend accepted email, id:', resendData?.id);
+  } catch (err: any) {
+    console.error('[OTP] Failed to reach Resend:', err);
+    return NextResponse.json({ success: false, message: `Failed to send email: ${err.message}` });
   }
 
   return NextResponse.json({ success: true, message: `OTP sent to ${email}.` });
