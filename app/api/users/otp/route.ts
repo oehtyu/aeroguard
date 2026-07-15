@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         from: 'AeroGuard BPSU <noreply@aeroguard-bpsu.xyz>',
         to: email,
-        subject: 'AeroGuard — Your OTP Code',
+        subject: 'AeroGuard — Complete your account setup ',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;background:#0a0e1a;color:#e2e8f0;padding:32px;border-radius:12px">
             <div style="text-align:center;margin-bottom:24px">
@@ -42,19 +42,13 @@ export async function POST(req: NextRequest) {
               <h2 style="color:#00c2ff;margin:8px 0">AeroGuard</h2>
               <p style="color:#64748b;font-size:13px">BPSU Fire Safety System</p>
             </div>
-            <p>An account has been created for you. Use the OTP below to verify and set your password:</p>
+            <p>An account has been created for you. Click the button below to set your password:</p>
             <div style="text-align:center;margin:28px 0">
-              <div style="background:#111827;border:2px solid #0072ff;border-radius:12px;padding:20px;display:inline-block">
-                <span style="font-size:36px;font-family:monospace;font-weight:bold;letter-spacing:8px;color:#00c2ff">${otp}</span>
-              </div>
-              <p style="color:#64748b;font-size:12px;margin-top:10px">Expires in 15 minutes</p>
-            </div>
-            <p>Click the link below to set your password:</p>
-            <div style="text-align:center;margin:20px 0">
               <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&otp=${otp}"
-                style="background:linear-gradient(135deg,#0072ff,#00c2ff);color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">
+                style="background:linear-gradient(135deg,#0072ff,#00c2ff);color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;font-size:15px">
                 Set My Password
               </a>
+              <p style="color:#64748b;font-size:12px;margin-top:14px">This link expires in 15 minutes.</p>
             </div>
             <p style="color:#64748b;font-size:12px;margin-top:24px">If you did not request this account, please ignore this email. The account will remain inactive until a password is set.</p>
           </div>
