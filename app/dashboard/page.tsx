@@ -368,26 +368,34 @@ export default function Dashboard() {
   }
 
   useEffect(()=>{
-    const stored=localStorage.getItem(SESSION_KEY)
-    if(!stored){router.push('/login');return}
-    const last=localStorage.getItem(LAST_ACTIVE_KEY)
-    if(last&&Date.now()-parseInt(last)>IDLE_TIMEOUT_MS){
-      localStorage.removeItem(SESSION_KEY);localStorage.removeItem(LAST_ACTIVE_KEY);router.push('/login');return
-    }
-    setUser(JSON.parse(stored))
-    loadDevices();loadIncidents()
-    const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    // was: const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
-  const r=setInterval(()=>{loadDevices();loadIncidents()},5000)
-    const evts=['mousedown','mousemove','keydown','scroll','touchstart','click']
-    evts.forEach(e=>window.addEventListener(e,resetIdle,{passive:true}))
-    resetIdle()
-    return()=>{
-      clearInterval(t);clearInterval(r)
-      clearTimeout(idleTimer.current);clearTimeout(warnTimer.current)
-      evts.forEach(e=>window.removeEventListener(e,resetIdle))
-    }
-  },[])
+  const stored=localStorage.getItem(SESSION_KEY)
+  if(!stored){router.push('/login');return}
+  const last=localStorage.getItem(LAST_ACTIVE_KEY)
+  if(last&&Date.now()-parseInt(last)>IDLE_TIMEOUT_MS){
+    localStorage.removeItem(SESSION_KEY);localStorage.removeItem(LAST_ACTIVE_KEY);router.push('/login');return
+  }
+  setUser(JSON.parse(stored))
+  loadDevices();loadIncidents()
+  const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
+  // was: const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
+const r=setInterval(()=>{loadDevices();loadIncidents()},5000)
+  const evts=['mousedown','mousemove','keydown','scroll','touchstart','click']
+  evts.forEach(e=>window.addEventListener(e,resetIdle,{passive:true}))
+  resetIdle()
+  // Keep every open tab in sync with the session actually stored in this browser.
+  // If a different account logs in (or logs out) in another tab, this tab reloads
+  // so it always reflects the one true active session instead of drifting stale.
+  const onStorage=(e:StorageEvent)=>{
+    if(e.key===SESSION_KEY){window.location.reload()}
+  }
+  window.addEventListener('storage',onStorage)
+  return()=>{
+    clearInterval(t);clearInterval(r)
+    clearTimeout(idleTimer.current);clearTimeout(warnTimer.current)
+    evts.forEach(e=>window.removeEventListener(e,resetIdle))
+    window.removeEventListener('storage',onStorage)
+  }
+},[])
 
   const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),6000)}
   const api=async(url:string,method='GET',body?:any)=>{
