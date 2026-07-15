@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const [step, setStep] = useState<'credentials' | 'otp'>('credentials')
+  const [step, setStep] = useState<'credentials' | 'otp' | 'forgot' | 'forgotSent'>('credentials')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
@@ -12,7 +12,26 @@ export default function LoginPage() {
   const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [forgotUsername, setForgotUsername] = useState('')
   const router = useRouter()
+
+  async function handleForgotPassword() {
+    if (!forgotUsername) { setError('Please enter your username.'); return }
+    setLoading(true); setError('')
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: forgotUsername })
+      })
+      const data = await res.json()
+      setLoading(false)
+      if (!data.success) { setError(data.message); return }
+      setStep('forgotSent')
+    } catch {
+      setError('Cannot reach server.')
+      setLoading(false)
+    }
+  }
 
   async function handleLogin() {
     if (!username || !password) { setError('Please enter both username and password.'); return }
@@ -122,7 +141,42 @@ export default function LoginPage() {
               style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg,#0072ff,#00c2ff)', color: 'white', border: 'none', borderRadius: 8, fontSize: '.9rem', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, fontFamily: 'var(--font)' }}>
               {loading ? 'Checking…' : 'Sign In'}
             </button>
+            <button onClick={() => { setStep('forgot'); setError(''); setForgotUsername(username) }}
+              style={{ width: '100%', padding: 10, background: 'transparent', color: 'var(--accent)', border: 'none', fontSize: '.8rem', cursor: 'pointer', fontFamily: 'var(--font)', marginTop: 4 }}>
+              Forgot password?
+            </button>
           </>
+        ) : step === 'forgot' ? (
+          <>
+            <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4 }}>Reset your password</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: 28 }}>Enter your username and we'll email a reset link to your account's registered address.</div>
+
+            {error && <div style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: 'var(--red)', borderRadius: 8, padding: '10px 14px', fontSize: '.8rem', marginBottom: 16 }}>⚠️ &nbsp;{error}</div>}
+
+            <label style={{ fontSize: '.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Username</label>
+            <input value={forgotUsername} onChange={e => setForgotUsername(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleForgotPassword()}
+              placeholder="Enter your username"
+              style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 14px', color: 'var(--text)', fontSize: '.9rem', fontFamily: 'var(--font)', outline: 'none', marginBottom: 22 }} />
+
+            <button onClick={handleForgotPassword} disabled={loading}
+              style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg,#0072ff,#00c2ff)', color: 'white', border: 'none', borderRadius: 8, fontSize: '.9rem', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, fontFamily: 'var(--font)', marginBottom: 12 }}>
+              {loading ? 'Sending…' : 'Send Reset Link'}
+            </button>
+            <button onClick={() => { setStep('credentials'); setError('') }}
+              style={{ width: '100%', padding: 10, background: 'transparent', color: 'var(--muted)', border: 'none', fontSize: '.8rem', cursor: 'pointer', fontFamily: 'var(--font)' }}>
+              ← Back to sign in
+            </button>
+          </>
+        ) : step === 'forgotSent' ? (
+          <div style={{ textAlign: 'center', padding: '10px 0' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📧</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: 8 }}>Check your email</div>
+            <div style={{ fontSize: '.85rem', color: 'var(--muted)', marginBottom: 24 }}>If that username exists, a password reset link has been sent to the registered email. The link expires in 15 minutes.</div>
+            <button onClick={() => { setStep('credentials'); setError('') }}
+              style={{ padding: '10px 28px', background: 'linear-gradient(135deg,#0072ff,#00c2ff)', color: 'white', border: 'none', borderRadius: 8, fontSize: '.9rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+              ← Back to sign in
+            </button>
+          </div>
         ) : (
           <>
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4 }}>Enter verification code</div>

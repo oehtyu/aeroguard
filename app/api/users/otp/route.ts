@@ -44,12 +44,15 @@ export async function POST(req: NextRequest) {
             </div>
             <p>An account has been created for you. Click the button below to set your password:</p>
             <div style="text-align:center;margin:28px 0">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&otp=${otp}"
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}"
                 style="background:linear-gradient(135deg,#0072ff,#00c2ff);color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;font-size:15px">
                 Set My Password
               </a>
               <p style="color:#64748b;font-size:12px;margin-top:14px">This link expires in 15 minutes.</p>
             </div>
+            <p style="color:#64748b;font-size:11px;margin-top:20px;word-break:break-all">Button not working? Copy this link into your browser:<br/>
+              <span style="color:#00c2ff">${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}</span>
+            </p>
             <p style="color:#64748b;font-size:12px;margin-top:24px">If you did not request this account, please ignore this email. The account will remain inactive until a password is set.</p>
           </div>
         `
