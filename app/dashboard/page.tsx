@@ -353,6 +353,7 @@ export default function Dashboard() {
   const [exportLoading,setExportLoading]=useState<string|null>(null)
   const [otpLoading,setOtpLoading]=useState(false)
   const [visiblePw,setVisiblePw]=useState<Record<string,boolean>>({})
+  const [sidebarOpen,setSidebarOpen]=useState(false)
   const idleTimer=useRef<any>(null)
   const warnTimer=useRef<any>(null)
 
@@ -613,31 +614,31 @@ setModal(null);loadUsers()
   const [chipBg,chipColor,chipBorder]=(chip[user.user_type]||chip['Campus Personnel']).split('|')
 
   const input=(key:string,ph:string,type='text',disabled=false)=>{
-  const isPw=type==='password'
-  const shown=!!visiblePw[key]
-  return (
-  <div>
-    <div style={{position:'relative'}}>
-      <input type={isPw&&!shown?'password':'text'} value={form[key]||''} onChange={e=>{setForm({...form,[key]:e.target.value});setFormErrors({...formErrors,[key]:''})}} disabled={disabled}
-        placeholder={ph} style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:isPw?'9px 40px 9px 12px':'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}/>
-      {isPw&&(
-        <button type="button" onClick={()=>setVisiblePw({...visiblePw,[key]:!shown})} aria-label={shown?'Hide password':'Show password'}
-          style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:2,display:'flex'}}>
-          {shown?(
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 0 1-4.24-4.24M6.61 6.61A18.5 18.5 0 0 0 1 13s4 8 11 8a10.44 10.44 0 0 0 5.39-1.61"/><line x1="1" y1="1" x2="23" y2="23"/>
-            </svg>
-          ):(
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
-            </svg>
-          )}
-        </button>
-      )}
+    const isPw=type==='password'
+    const shown=!!visiblePw[key]
+    return (
+    <div>
+      <div style={{position:'relative'}}>
+        <input type={isPw&&!shown?'password':'text'} value={form[key]||''} onChange={e=>{setForm({...form,[key]:e.target.value});setFormErrors({...formErrors,[key]:''})}} disabled={disabled}
+          placeholder={ph} style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:isPw?'9px 40px 9px 12px':'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}/>
+        {isPw&&(
+          <button type="button" onClick={()=>setVisiblePw({...visiblePw,[key]:!shown})} aria-label={shown?'Hide password':'Show password'}
+            style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:2,display:'flex'}}>
+            {shown?(
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 0 1-4.24-4.24M6.61 6.61A18.5 18.5 0 0 0 1 13s4 8 11 8a10.44 10.44 0 0 0 5.39-1.61"/><line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            ):(
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+      {formErrors[key]&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors[key]}</div>}
     </div>
-    {formErrors[key]&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors[key]}</div>}
-  </div>
-)}
+  )}
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
   // Derived room list for current building in device form
@@ -646,6 +647,29 @@ setModal(null);loadUsers()
 
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
+      <style>{`
+        .ag-hamburger{display:none}
+        .ag-sidebar-close{display:none}
+        .ag-overlay{display:none}
+        @media (max-width: 860px){
+          .ag-hamburger{display:flex}
+          .ag-sidebar-close{display:flex}
+          .ag-sidebar{
+            transform:translateX(-100%);
+            transition:transform .25s ease;
+            box-shadow:4px 0 24px rgba(0,0,0,0.4);
+          }
+          .ag-sidebar.open{transform:translateX(0)}
+          .ag-main{margin-left:0 !important}
+          .ag-overlay.open{
+            display:block;
+            position:fixed;inset:0;
+            background:rgba(0,0,0,0.5);
+            z-index:99;
+          }
+        }
+      `}</style>
+
       {idleWarn&&(
         <div style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,background:'rgba(234,179,8,0.95)',color:'#000',padding:'10px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'.85rem',fontWeight:600}}>
           <span>⚠️ You'll be logged out in 2 minutes due to inactivity.</span>
@@ -653,17 +677,23 @@ setModal(null);loadUsers()
         </div>
       )}
 
+      <div className={`ag-overlay${sidebarOpen?' open':''}`} onClick={()=>setSidebarOpen(false)} />
+
       {/* SIDEBAR */}
-      <div style={{width:240,background:'var(--panel)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:100}}>
+      <div className={`ag-sidebar${sidebarOpen?' open':''}`} style={{width:240,background:'var(--panel)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:100}}>
         <div style={{padding:'20px 22px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
           <div style={{width:36,height:36,background:'linear-gradient(135deg,#0072ff,#00c2ff)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🛡️</div>
-          <div><div style={{fontSize:'1.1rem',fontWeight:700}}>AeroGuard</div><div style={{fontSize:'.65rem',color:'var(--muted)',fontFamily:'var(--mono)',letterSpacing:1,textTransform:'uppercase'}}>BPSU Fire Safety</div></div>
+          <div style={{flex:1}}><div style={{fontSize:'1.1rem',fontWeight:700}}>AeroGuard</div><div style={{fontSize:'.65rem',color:'var(--muted)',fontFamily:'var(--mono)',letterSpacing:1,textTransform:'uppercase'}}>BPSU Fire Safety</div></div>
+          <button className="ag-sidebar-close" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"
+            style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',padding:4,alignItems:'center'}}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
         <nav style={{padding:'12px 0',flex:1}}>
           {navItems.map(item=>(
             <div key={item.id}>
               {item.section&&<div style={{padding:'10px 22px 4px',fontSize:'.65rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:2,fontFamily:'var(--mono)'}}>{item.section}</div>}
-              <div onClick={()=>item.admin?guardedView(item.id):switchView(item.id)} style={{padding:'10px 22px',cursor:'pointer',display:'flex',alignItems:'center',gap:10,fontSize:'.875rem',color:view===item.id?'var(--accent)':'var(--gray)',borderLeft:view===item.id?'2px solid var(--accent)':'2px solid transparent',background:view===item.id?'rgba(0,194,255,.08)':'transparent',transition:'all .15s'}}>
+              <div onClick={()=>{item.admin?guardedView(item.id):switchView(item.id);setSidebarOpen(false)}} style={{padding:'10px 22px',cursor:'pointer',display:'flex',alignItems:'center',gap:10,fontSize:'.875rem',color:view===item.id?'var(--accent)':'var(--gray)',borderLeft:view===item.id?'2px solid var(--accent)':'2px solid transparent',background:view===item.id?'rgba(0,194,255,.08)':'transparent',transition:'all .15s'}}>
                 <span>{item.icon}</span>{item.label}
                 {item.admin&&!isAdmin&&<span style={{fontSize:'.6rem',marginLeft:'auto',color:'var(--muted)'}}>🔒</span>}
               </div>
@@ -687,11 +717,17 @@ setModal(null);loadUsers()
       </div>
 
       {/* MAIN */}
-      <div style={{marginLeft:240,flex:1,display:'flex',flexDirection:'column'}}>
-        <div style={{padding:'14px 28px',background:'var(--panel)',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:50}}>
-          <div>
-            <div style={{fontSize:'1.05rem',fontWeight:600}}>{{dashboard:'System Dashboard',map:'Campus Map',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Fire Equipment'}[view]}</div>
-            <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
+      <div className="ag-main" style={{marginLeft:240,flex:1,display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'14px 28px',background:'var(--panel)',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:50,gap:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:14,minWidth:0}}>
+            <button className="ag-hamburger" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"
+              style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text)',cursor:'pointer',padding:'6px 8px',alignItems:'center',flexShrink:0}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Fire Equipment'}[view]}</div>
+              <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
+            </div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:14}}>
             <span style={{fontSize:'.68rem',padding:'3px 10px',borderRadius:20,fontFamily:'var(--mono)',fontWeight:600,textTransform:'uppercase',background:chipBg,color:chipColor,border:`1px solid ${chipBorder}`}}>{user?.user_type}</span>
