@@ -7,6 +7,7 @@ function SetPasswordForm() {
   const params = useSearchParams()
   const uid = params.get('uid') || ''
   const otpFromLink = params.get('otp') || ''
+  const usernameFromLink = params.get('u') || ''
 
   const [step, setStep] = useState<'otp'|'password'|'done'>(otpFromLink ? 'password' : 'otp')
   const [otp, setOtp] = useState(otpFromLink)
@@ -124,6 +125,13 @@ function SetPasswordForm() {
           <>
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4, color: '#e2e8f0' }}>Set Your Password</div>
             <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 24 }}>Choose a strong password (minimum 8 characters).</div>
+            {usernameFromLink && (
+              <>
+                <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Username</label>
+                <input value={usernameFromLink} disabled readOnly
+                  style={{ width: '100%', background: '#151d2e', border: '1px solid #1e2d45', borderRadius: 8, padding: '11px 14px', color: '#8a97ac', fontSize: '.9rem', fontFamily: "'IBM Plex Sans',sans-serif", outline: 'none', marginBottom: 18, cursor: 'not-allowed' }} />
+              </>
+            )}
             <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>New Password</label>
             {inp(password, setPassword, '••••••••', 'password', 'password')}
             <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Confirm Password</label>
