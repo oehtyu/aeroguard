@@ -15,6 +15,8 @@ function SetPasswordForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [verifiedOtp, setVerifiedOtp] = useState(otpFromLink)
+  const [visible, setVisible] = useState<Record<string, boolean>>({})
+  const toggleVisible = (key: string) => setVisible(v => ({ ...v, [key]: !v[key] }))
 
   // Auto-verify if OTP came from link
   useEffect(() => {
@@ -58,12 +60,38 @@ function SetPasswordForm() {
     setStep('done')
   }
 
-  const inp = (val: string, set: (v: string) => void, ph: string, type = 'text') => (
-    <input type={type} value={val} onChange={e => { set(e.target.value); setError('') }}
-      placeholder={ph}
-      style={{ width: '100%', background: '#1a2235', border: '1px solid #1e2d45', borderRadius: 8, padding: '11px 14px', color: '#e2e8f0', fontSize: '.9rem', fontFamily: "'IBM Plex Sans',sans-serif", outline: 'none', marginBottom: 18 }}
-    />
+  const EyeIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   )
+  const EyeOffIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 0 1-4.24-4.24M6.61 6.61A18.5 18.5 0 0 0 1 13s4 8 11 8a10.44 10.44 0 0 0 5.39-1.61" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
+
+  const inp = (val: string, set: (v: string) => void, ph: string, type = 'text', key?: string) => {
+    const isPw = type === 'password'
+    const shown = !!(key && visible[key])
+    return (
+      <div style={{ position: 'relative', marginBottom: 18 }}>
+        <input type={isPw && !shown ? 'password' : 'text'} value={val} onChange={e => { set(e.target.value); setError('') }}
+          placeholder={ph}
+          style={{ width: '100%', background: '#1a2235', border: '1px solid #1e2d45', borderRadius: 8, padding: isPw ? '11px 44px 11px 14px' : '11px 14px', color: '#e2e8f0', fontSize: '.9rem', fontFamily: "'IBM Plex Sans',sans-serif", outline: 'none' }}
+        />
+        {isPw && (
+          <button type="button" onClick={() => key && toggleVisible(key)} aria-label={shown ? 'Hide password' : 'Show password'}
+            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4, display: 'flex' }}>
+            {shown ? EyeOffIcon : EyeIcon}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0e1a', position: 'relative', overflow: 'hidden' }}>
@@ -97,9 +125,9 @@ function SetPasswordForm() {
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4, color: '#e2e8f0' }}>Set Your Password</div>
             <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 24 }}>Choose a strong password (minimum 8 characters).</div>
             <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>New Password</label>
-            {inp(password, setPassword, '••••••••', 'password')}
+            {inp(password, setPassword, '••••••••', 'password', 'password')}
             <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Confirm Password</label>
-            {inp(confirm, setConfirm, '••••••••', 'password')}
+            {inp(confirm, setConfirm, '••••••••', 'password', 'confirm')}
             <button onClick={setNewPassword} disabled={loading} style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg,#0072ff,#00c2ff)', color: 'white', border: 'none', borderRadius: 8, fontSize: '.9rem', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
               {loading ? 'Saving…' : 'Set Password & Activate Account'}
             </button>

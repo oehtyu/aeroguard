@@ -352,6 +352,7 @@ export default function Dashboard() {
   const [exportMenu,setExportMenu]=useState(false)
   const [exportLoading,setExportLoading]=useState<string|null>(null)
   const [otpLoading,setOtpLoading]=useState(false)
+  const [visiblePw,setVisiblePw]=useState<Record<string,boolean>>({})
   const idleTimer=useRef<any>(null)
   const warnTimer=useRef<any>(null)
 
@@ -611,13 +612,32 @@ setModal(null);loadUsers()
   if(!user) return null
   const [chipBg,chipColor,chipBorder]=(chip[user.user_type]||chip['Campus Personnel']).split('|')
 
-  const input=(key:string,ph:string,type='text',disabled=false)=>(
-    <div>
-      <input type={type} value={form[key]||''} onChange={e=>{setForm({...form,[key]:e.target.value});setFormErrors({...formErrors,[key]:''})}} disabled={disabled}
-        placeholder={ph} style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}/>
-      {formErrors[key]&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors[key]}</div>}
+  const input=(key:string,ph:string,type='text',disabled=false)=>{
+  const isPw=type==='password'
+  const shown=!!visiblePw[key]
+  return (
+  <div>
+    <div style={{position:'relative'}}>
+      <input type={isPw&&!shown?'password':'text'} value={form[key]||''} onChange={e=>{setForm({...form,[key]:e.target.value});setFormErrors({...formErrors,[key]:''})}} disabled={disabled}
+        placeholder={ph} style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors[key]?'var(--red)':'var(--border)'}`,borderRadius:6,padding:isPw?'9px 40px 9px 12px':'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none',opacity:disabled?0.5:1}}/>
+      {isPw&&(
+        <button type="button" onClick={()=>setVisiblePw({...visiblePw,[key]:!shown})} aria-label={shown?'Hide password':'Show password'}
+          style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'var(--muted)',padding:2,display:'flex'}}>
+          {shown?(
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 0 1-4.24-4.24M6.61 6.61A18.5 18.5 0 0 0 1 13s4 8 11 8a10.44 10.44 0 0 0 5.39-1.61"/><line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          ):(
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          )}
+        </button>
+      )}
     </div>
-  )
+    {formErrors[key]&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors[key]}</div>}
+  </div>
+)}
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
   // Derived room list for current building in device form

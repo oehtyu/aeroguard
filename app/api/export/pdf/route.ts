@@ -1,113 +1,100 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
-import { writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { PDFDocument, StandardFonts, rgb, PageSizes } from 'pdf-lib';
+
+const fmtTime = (ts: string) => {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  } catch { return (ts || '').slice(0, 16); }
+};
+
+const hex = (h: string) => {
+  const n = parseInt(h.replace('#', ''), 16);
+  return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+};
+
+const LEVEL_COLORS: Record<string, string> = { Gray: '94a3b8', Yellow: 'eab308', Orange: 'f97316', Red: 'ef4444' };
+const HEADER_BG = hex('1e3a5f');
+const ROW_BG_EVEN = hex('f8fafc');
+const ROW_BG_ODD = hex('ffffff');
+const GRID = hex('cbd5e1');
+const TEXT = hex('334155');
+const MUTED = hex('64748b');
+const TITLE_COLOR = hex('0072ff');
+const WHITE = rgb(1, 1, 1);
 
 export async function POST(req: NextRequest) {
-  const { incidents } = await req.json();
-
-  // Write incidents to a temp JSON file, generate PDF via Python
-  const tmpJson = join(tmpdir(), `ag_export_${Date.now()}.json`);
-  const tmpPdf = join(tmpdir(), `ag_export_${Date.now()}.pdf`);
-
   try {
-    writeFileSync(tmpJson, JSON.stringify(incidents));
+    const { incidents } = await req.json();
+    const rows = (incidents || []).map((i: any) => ({
+      time: fmtTime(i.created_at),
+      device: i.device_id || '',
+      location: (i.location || '').slice(0, 30),
+      level: i.threat_level || 'Gray',
+      pm25: `${i.pm25_value ?? '-'} \u00b5g/m\u00b3`,
+      status: i.resolved ? 'Resolved' : 'Active',
+    }));
 
-    const script = `
-import json, sys
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from datetime import datetime
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-with open('${tmpJson}') as f:
-    incidents = json.load(f)
+    const [pageW, pageH] = PageSizes.Letter;
+    const margin = 40;
+    const usableW = pageW - margin * 2;
+    const colWidths = [80, 60, 155, 55, 75, 65]; // sums to 490 ~ usableW
+    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Status'];
+    const rowH = 20;
+    const headerH = 22;
 
-doc = SimpleDocTemplate('${tmpPdf}', pagesize=letter,
-    leftMargin=0.75*inch, rightMargin=0.75*inch,
-    topMargin=0.75*inch, bottomMargin=0.75*inch)
+    let page = pdfDoc.addPage(PageSizes.Letter);
+    let y = pageH - margin;
 
-styles = getSampleStyleSheet()
-story = []
+    const drawHeader = () => {
+      page.drawText('AeroGuard \u2014 Incident Report', { x: margin, y: y - 18, size: 20, font: fontBold, color: TITLE_COLOR });
+      y -= 26;
+      page.drawText(`Generated: ${new Date().toLocaleString('en-PH')}   |   Total Records: ${rows.length}`, { x: margin, y: y - 12, size: 9, font, color: MUTED });
+      y -= 26;
+    };
 
-# Title
-title_style = ParagraphStyle('title', parent=styles['Title'],
-    fontSize=20, textColor=colors.HexColor('#0072ff'), spaceAfter=6)
-story.append(Paragraph('AeroGuard — Incident Report', title_style))
+    const drawTableHeader = () => {
+      let x = margin;
+      page.drawRectangle({ x: margin, y: y - headerH, width: usableW, height: headerH, color: HEADER_BG });
+      headers.forEach((h, i) => {
+        page.drawText(h, { x: x + 5, y: y - headerH + 6, size: 9, font: fontBold, color: WHITE });
+        x += colWidths[i];
+      });
+      y -= headerH;
+    };
 
-sub_style = ParagraphStyle('sub', parent=styles['Normal'],
-    fontSize=9, textColor=colors.HexColor('#64748b'), spaceAfter=16)
-story.append(Paragraph(f'Generated: {datetime.now().strftime("%B %d, %Y %I:%M %p")} | Total Records: {len(incidents)}', sub_style))
-story.append(Spacer(1, 0.1*inch))
+    drawHeader();
+    drawTableHeader();
 
-# Table header
-headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Status']
-col_widths = [1.1*inch, 0.8*inch, 2.1*inch, 0.75*inch, 0.9*inch, 0.85*inch]
+    rows.forEach((row: any, ri: number) => {
+      if (y - rowH < margin + 30) {
+        page = pdfDoc.addPage(PageSizes.Letter);
+        y = pageH - margin;
+        drawTableHeader();
+      }
+      let x = margin;
+      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
+      const cells = [row.time, row.device, row.location, row.level, row.pm25, row.status];
+      cells.forEach((cell, ci) => {
+        const isLevel = ci === 3;
+        const color = isLevel ? hex(LEVEL_COLORS[row.level] || '94a3b8') : TEXT;
+        page.drawText(String(cell), { x: x + 5, y: y - rowH + 6, size: 8, font: isLevel ? fontBold : font, color, maxWidth: colWidths[ci] - 8 });
+        x += colWidths[ci];
+      });
+      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, borderColor: GRID, borderWidth: 0.5, color: undefined });
+      y -= rowH;
+    });
 
-def fmt_time(ts):
-    try:
-        dt = datetime.fromisoformat(ts.replace('Z',''))
-        return dt.strftime('%b %d %I:%M %p')
-    except:
-        return ts[:16]
+    page.drawText('AeroGuard \u2014 BPSU Fire Safety System | Sentinel Aerosol Systems', { x: margin, y: margin - 10, size: 7.5, font, color: MUTED });
 
-level_colors = {'Gray': '#94a3b8','Yellow':'#eab308','Orange':'#f97316','Red':'#ef4444'}
+    const pdfBytes = await pdfDoc.save();
 
-rows = [headers]
-for i in incidents:
-    rows.append([
-        fmt_time(i.get('created_at','')),
-        i.get('device_id',''),
-        i.get('location','')[:32],
-        i.get('threat_level',''),
-        f"{i.get('pm25_value','')} µg/m³",
-        'Resolved' if i.get('resolved') else 'Active',
-    ])
-
-t = Table(rows, colWidths=col_widths, repeatRows=1)
-style = TableStyle([
-    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1e3a5f')),
-    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-    ('FONTSIZE', (0,0), (-1,0), 8),
-    ('FONTSIZE', (0,1), (-1,-1), 7.5),
-    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#f8fafc'), colors.white]),
-    ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#cbd5e1')),
-    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ('PADDING', (0,0), (-1,-1), 5),
-    ('TOPPADDING', (0,0), (-1,0), 8),
-    ('BOTTOMPADDING', (0,0), (-1,0), 8),
-])
-# Color threat level column
-for row_idx, inc in enumerate(incidents, start=1):
-    lvl = inc.get('threat_level','Gray')
-    col = level_colors.get(lvl, '#94a3b8')
-    style.add('TEXTCOLOR', (3, row_idx), (3, row_idx), colors.HexColor(col))
-    style.add('FONTNAME', (3, row_idx), (3, row_idx), 'Helvetica-Bold')
-
-t.setStyle(style)
-story.append(t)
-
-# Footer
-story.append(Spacer(1, 0.2*inch))
-footer_style = ParagraphStyle('footer', parent=styles['Normal'],
-    fontSize=7.5, textColor=colors.HexColor('#94a3b8'))
-story.append(Paragraph('AeroGuard — BPSU Fire Safety System | Sentinel Aerosol Systems', footer_style))
-
-doc.build(story)
-print('ok')
-`;
-
-    execSync(`python3 -c "${script.replace(/"/g, '\\"').replace(/\n/g,'\\n')}"`, { timeout: 15000 });
-
-    const pdfBuffer = readFileSync(tmpPdf);
-    unlinkSync(tmpJson);
-    unlinkSync(tmpPdf);
-
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
@@ -115,8 +102,7 @@ print('ok')
       }
     });
   } catch (err: any) {
-    try { unlinkSync(tmpJson) } catch {}
-    try { unlinkSync(tmpPdf) } catch {}
-    return NextResponse.json({ success: false, message: 'PDF generation failed: ' + err.message });
+    console.error('[PDF EXPORT] Failed:', err);
+    return NextResponse.json({ success: false, message: 'PDF generation failed: ' + err.message }, { status: 500 });
   }
 }
