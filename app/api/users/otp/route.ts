@@ -10,11 +10,13 @@ export async function POST(req: NextRequest) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
-  // Store OTP in DB
-  await sql`
+  // Store OTP in DB, and grab the username in the same query
+  const rows = await sql`
     UPDATE users SET otp_code=${otp}, otp_expires_at=${expiresAt.toISOString()}, is_verified=false
     WHERE user_id=${user_id}
+    RETURNING username
   `;
+  const username = rows[0]?.username || '';
 
   // Send via Resend
   const resendKey = process.env.RESEND_API_KEY;
@@ -42,16 +44,16 @@ export async function POST(req: NextRequest) {
               <h2 style="color:#00c2ff;margin:8px 0">AeroGuard</h2>
               <p style="color:#64748b;font-size:13px">BPSU Fire Safety System</p>
             </div>
-            <p>An account has been created for you. Click the button below to set your password:</p>
+            <p>An account has been created for you. Your username is <strong style="color:#00c2ff">${username}</strong>. Click the button below to set your password:</p>
             <div style="text-align:center;margin:28px 0">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}"
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}&amp;u=${encodeURIComponent(username)}"
                 style="background:linear-gradient(135deg,#0072ff,#00c2ff);color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;font-size:15px">
                 Set My Password
               </a>
               <p style="color:#64748b;font-size:12px;margin-top:14px">This link expires in 15 minutes.</p>
             </div>
             <p style="color:#64748b;font-size:11px;margin-top:20px;word-break:break-all">Button not working? Copy this link into your browser:<br/>
-              <span style="color:#00c2ff">${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}</span>
+              <span style="color:#00c2ff">${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}&amp;u=${encodeURIComponent(username)}</span>
             </p>
             <p style="color:#64748b;font-size:12px;margin-top:24px">If you did not request this account, please ignore this email. The account will remain inactive until a password is set.</p>
           </div>
