@@ -11,66 +11,48 @@ const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Ora
 // ── STATIC BUILDING / ROOM / EXTINGUISHER CONFIG ─────────────
 // Each room has a fixed SVG center point on the 2D map
 const ROOM_CONFIGS: Record<string, { x:number; y:number; building:string; floor:string; room:string }> = {
-  'Medina Lacson Building|1F|Room 101': { x:117, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
-  'Medina Lacson Building|1F|Room 102': { x:177, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
-  'Medina Lacson Building|1F|Room 103': { x:237, y:220, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
-  'Medina Lacson Building|2F|Room 201': { x:117, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
-  'Medina Lacson Building|2F|Room 202': { x:177, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
-  'Medina Lacson Building|2F|Room 203': { x:237, y:152, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
-  'New CEA Building|1F|Room 101': { x:400, y:120, building:'New CEA Building', floor:'1F', room:'Room 101' },
-  'New CEA Building|1F|Room 102': { x:465, y:120, building:'New CEA Building', floor:'1F', room:'Room 102' },
-  'New CEA Building|1F|Room 103': { x:530, y:120, building:'New CEA Building', floor:'1F', room:'Room 103' },
-  'New CEA Building|2F|Room 201': { x:400, y:195, building:'New CEA Building', floor:'2F', room:'Room 201' },
-  'New CEA Building|2F|Room 204': { x:465, y:195, building:'New CEA Building', floor:'2F', room:'Room 204' },
-  'New CEA Building|2F|Room 205': { x:530, y:195, building:'New CEA Building', floor:'2F', room:'Room 205' },
-  'CAHS Building|1F|Room 103': { x:160, y:380, building:'CAHS Building', floor:'1F', room:'Room 103' },
-  'CAHS Building|1F|Room 104': { x:225, y:380, building:'CAHS Building', floor:'1F', room:'Room 104' },
-  'CAHS Building|1F|Room 105': { x:282, y:380, building:'CAHS Building', floor:'1F', room:'Room 105' },
-  'CAHS Building|2F|Room 202': { x:160, y:450, building:'CAHS Building', floor:'2F', room:'Room 202' },
-  'CAHS Building|2F|Room 203': { x:225, y:450, building:'CAHS Building', floor:'2F', room:'Room 203' },
-  'CAHS Building|2F|Room 204': { x:282, y:450, building:'CAHS Building', floor:'2F', room:'Room 204' },
+  'Medina Lacson Building|1F|Room 101': { x:280, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
+  'Medina Lacson Building|1F|Room 102': { x:340, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
+  'Medina Lacson Building|1F|Room 103': { x:400, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
+  'Medina Lacson Building|2F|Room 201': { x:280, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
+  'Medina Lacson Building|2F|Room 202': { x:340, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
+  'Medina Lacson Building|2F|Room 203': { x:400, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
+  'COAS Building|1F|Room 101': { x:50, y:390, building:'COAS Building', floor:'1F', room:'Room 101' },
+  'COAS Building|1F|Room 102': { x:115, y:390, building:'COAS Building', floor:'1F', room:'Room 102' },
+  'COAS Building|1F|Room 103': { x:180, y:390, building:'COAS Building', floor:'1F', room:'Room 103' },
+  'CAHS Building|1F|Room 103': { x:495, y:60,  building:'CAHS Building', floor:'1F', room:'Room 103' },
+  'CAHS Building|1F|Room 104': { x:600, y:60,  building:'CAHS Building', floor:'1F', room:'Room 104' },
+  'CAHS Building|1F|Room 105': { x:700, y:60,  building:'CAHS Building', floor:'1F', room:'Room 105' },
+  'CAHS Building|2F|Room 202': { x:495, y:90,  building:'CAHS Building', floor:'2F', room:'Room 202' },
+  'CAHS Building|2F|Room 203': { x:600, y:90,  building:'CAHS Building', floor:'2F', room:'Room 203' },
+  'CAHS Building|2F|Room 204': { x:700, y:90,  building:'CAHS Building', floor:'2F', room:'Room 204' },
 }
 
 const EXT_CONFIGS: Record<string, { x:number; y:number }> = {
   // ── Medina Lacson Building ────────────────────────────────
-  // DB value (row 1): "Hallway between Rooms 201-202" or similar — 2F
-  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:145, y:178 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:145, y:178 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:145, y:178 },
-  // DB value (row 2): "Near main staircase, R…" — 1F
-  'Medina Lacson Building|1F|Near main staircase':                { x:145, y:250 },
-  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:145, y:250 },
-  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:145, y:250 },
+  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:310, y:150 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:310, y:150 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:310, y:150 },
+  'Medina Lacson Building|1F|Near main staircase':                { x:310, y:200 },
+  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:310, y:200 },
+  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:310, y:200 },
 
-  // ── New CEA Building ──────────────────────────────────────
-  // DB value (row 3): "Hallway near Room 101 …" — 1F
-  'New CEA Building|1F|Hallway near Room 101':                    { x:415, y:155 },
-  'New CEA Building|1F|Hallway near Room 101 and 102':            { x:415, y:155 },
-  // DB value (row 4): "Laboratory area near R…" — 1F
-  'New CEA Building|1F|Laboratory near Room 103':                 { x:480, y:155 },
-  'New CEA Building|1F|Laboratory area near Room 103':            { x:480, y:155 },
-  'New CEA Building|1F|Laboratory area near Rooms 103':          { x:480, y:155 },
-  // DB value (row 5): "Hallway between Rooms …" — 2F
-  'New CEA Building|2F|Hallway Rooms 204-205':                    { x:480, y:235 },
-  'New CEA Building|2F|Hallway between Rooms 204-205':            { x:480, y:235 },
-  'New CEA Building|2F|Hallway between Rooms 204 and 205':        { x:480, y:235 },
+  // ── COAS Building ─────────────────────────────────────────
+  'COAS Building|1F|Hallway near Room 101':                       { x:100, y:390 },
+  'COAS Building|1F|Hallway near Room 101 and 102':               { x:100, y:390 },
 
   // ── CAHS Building ─────────────────────────────────────────
-  // DB value (row 7): "Main hallway between R…" — 1F
-  'CAHS Building|1F|Main hallway 103-104':                        { x:195, y:415 },
-  'CAHS Building|1F|Main hallway between Rooms 103-104':          { x:195, y:415 },
-  'CAHS Building|1F|Main hallway between Rooms 103 and 104':      { x:195, y:415 },
-  'CAHS Building|1F|Main hallway between R':                      { x:195, y:415 },
-  // DB value (row 8): "Supply room near Room …" — 1F (Foam, Expired)
-  'CAHS Building|1F|Supply room near Room 105':                   { x:255, y:415 },
-  'CAHS Building|1F|Supply room near Rooms 105':                  { x:255, y:415 },
-  // DB value (row 9): "Hallway between Rooms …" — 2F
-  'CAHS Building|2F|Hallway Rooms 201-202':                       { x:195, y:480 },
-  'CAHS Building|2F|Hallway between Rooms 201-202':               { x:195, y:480 },
-  'CAHS Building|2F|Hallway between Rooms 201 and 202':           { x:195, y:480 },
-  // DB value (row 10): "Near nursing lab Room …" — 2F
-  'CAHS Building|2F|Near nursing lab Room 203':                   { x:260, y:480 },
-  'CAHS Building|2F|Near nursing lab Room 203 area':              { x:260, y:480 },
+  'CAHS Building|1F|Main hallway 103-104':                        { x:550, y:55 },
+  'CAHS Building|1F|Main hallway between Rooms 103-104':          { x:550, y:55 },
+  'CAHS Building|1F|Main hallway between Rooms 103 and 104':      { x:550, y:55 },
+  'CAHS Building|1F|Main hallway between R':                      { x:550, y:55 },
+  'CAHS Building|1F|Supply room near Room 105':                   { x:660, y:55 },
+  'CAHS Building|1F|Supply room near Rooms 105':                  { x:660, y:55 },
+  'CAHS Building|2F|Hallway Rooms 201-202':                       { x:550, y:85 },
+  'CAHS Building|2F|Hallway between Rooms 201-202':               { x:550, y:85 },
+  'CAHS Building|2F|Hallway between Rooms 201 and 202':           { x:550, y:85 },
+  'CAHS Building|2F|Near nursing lab Room 203':                   { x:660, y:85 },
+  'CAHS Building|2F|Near nursing lab Room 203 area':              { x:660, y:85 },
 }
 
 function getRoomPos(building:string, floor:string, room:string) {
@@ -81,21 +63,96 @@ function getExtPos(building:string, floor:string, desc:string): {x:number;y:numb
 }
 
 // ── BUILDING SVG BLUEPRINTS ───────────────────────────────────
+// Matches the campus layout diagram. Medina Lacson, COAS, and CAHS are the
+// three "smart" buildings with real tracked rooms/devices. Everything else
+// is a static labeled area. Evacuation routes lead to Gate 2 (Medina Lacson
+// + COAS cluster) or Gate 3 (CAHS), matching the drawn arrows.
 const BUILDINGS = [
-  { id:'medina', name:'Medina Lacson Building', x:80, y:120, w:200, h:140, color:'#1e3a5f',
-    rooms:[{l:'201',x:90,y:130,w:55,h:45},{l:'202',x:150,y:130,w:55,h:45},{l:'203',x:210,y:130,w:60,h:45},
-           {l:'101',x:90,y:185,w:55,h:65},{l:'102',x:150,y:185,w:55,h:65},{l:'103',x:210,y:185,w:60,h:65}] },
-  { id:'cea', name:'New CEA Building', x:360, y:80, w:220, h:160, color:'#1a3a2f',
-    rooms:[{l:'101',x:370,y:90,w:60,h:60},{l:'102',x:435,y:90,w:60,h:60},{l:'103',x:500,y:90,w:70,h:60},
-           {l:'201',x:370,y:160,w:60,h:70},{l:'204',x:435,y:160,w:60,h:70},{l:'205',x:500,y:160,w:70,h:70}] },
-  { id:'cahs', name:'CAHS Building', x:120, y:340, w:200, h:150, color:'#3a1a2f',
-    rooms:[{l:'103',x:130,y:350,w:60,h:60},{l:'104',x:195,y:350,w:60,h:60},{l:'105',x:260,y:350,w:50,h:60},
-           {l:'202',x:130,y:420,w:60,h:60},{l:'203',x:195,y:420,w:60,h:60},{l:'204',x:260,y:420,w:50,h:60}] },
+  { id:'medina', name:'Medina Lacson Building', x:250, y:140, w:200, h:90, color:'#1e3a5f',
+    floors:[
+      { label:'2F', y:140, h:40, rooms:[{l:'201',x:260,w:55},{l:'202',x:320,w:55},{l:'203',x:380,w:60}] },
+      { label:'1F', y:180, h:50, rooms:[{l:'101',x:260,w:55},{l:'102',x:320,w:55},{l:'103',x:380,w:60}] },
+    ] },
+  { id:'coas', name:'COAS Building', x:10, y:350, w:210, h:80, color:'#2d1e5f',
+    floors:[
+      { label:'1F', y:360, h:60, rooms:[{l:'101',x:20,w:60},{l:'102',x:85,w:60},{l:'103',x:150,w:60}] },
+    ] },
+  { id:'cahs', name:'CAHS Building', x:470, y:30, w:270, h:90, color:'#3a1a2f',
+    floors:[
+      { label:'1F', y:30, h:45, rooms:[{l:'103',x:480,w:80},{l:'104',x:565,w:80},{l:'105',x:650,w:80}] },
+      { label:'2F', y:75, h:45, rooms:[{l:'202',x:480,w:80},{l:'203',x:565,w:80},{l:'204',x:650,w:80}] },
+    ] },
 ]
-const ASSEMBLY = {x:580,y:340,w:100,h:60}
+
+// ── GATES ────────────────────────────────────────────────────
+const GATES = [
+  { id:'gate1', label:'GATE 1', x:990, y:430, w:35, h:32 },
+  { id:'gate2', label:'GATE 2', x:310, y:580, w:40, h:28 },
+  { id:'gate3', label:'GATE 3', x:395, y:8,   w:40, h:28 },
+]
+
+// ── EVACUATION ROUTES ────────────────────────────────────────
+// Orthogonal paths from each smart building toward its assigned gate.
+const EVAC_ROUTES = [
+  { id:'cahs-to-gate3',   points:'605,120 605,145 415,145 415,38' },
+  { id:'medina-to-gate2', points:'350,230 350,575 330,575 330,582' },
+  { id:'coas-to-gate2',   points:'220,430 220,300 350,300' },
+]
+
+// ── STATIC AREAS ─────────────────────────────────────────────
+// Non-interactive labeled blocks — trees, walls, parking, and named support
+// buildings that don't have individual sensor rooms tracked yet.
+type AreaStyle = 'gray' | 'tree' | 'building' | 'wall'
+const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; style:AreaStyle }[] = [
+  // Walls
+  { x:10,  y:10,  w:360, h:12, label:'', style:'wall' },
+  { x:460, y:10,  w:560, h:12, label:'', style:'wall' },
+  { x:10,  y:595, w:280, h:12, label:'', style:'wall' },
+  { x:370, y:595, w:560, h:12, label:'', style:'wall' },
+  { x:1005,y:30,  w:20,  h:380,label:'', style:'wall' },
+
+  // Top row
+  { x:10,  y:30,  w:360, h:55, label:'Unnamed Building', style:'gray' },
+  { x:800, y:30,  w:115, h:70, label:'Unnamed Building', style:'gray' },
+  { x:940, y:30,  w:45,  h:380,label:'Unnamed Building', style:'gray' },
+
+  // Main row (around Medina Lacson)
+  { x:10,  y:145, w:210, h:195, label:'Trees / Green Area', style:'tree' },
+  { x:470, y:140, w:125, h:65, label:'Campus Library', style:'building' },
+  { x:610, y:140, w:155, h:80, label:'Trees / Green Area', style:'tree' },
+  { x:470, y:215, w:125, h:35, label:'Parking Area', style:'building' },
+
+  // Quadrangle row
+  { x:250, y:235, w:200, h:105, label:'Quadrangle', style:'gray' },
+  { x:470, y:255, w:140, h:35, label:'Unnamed Building', style:'gray' },
+  { x:630, y:225, w:155, h:80, label:'Sari-Gamit Court', style:'building' },
+  { x:470, y:300, w:140, h:35, label:'Food Court', style:'building' },
+
+  // COAS / chapel / auto row
+  { x:225, y:350, w:55,  h:80, label:'University Chapel', style:'building' },
+  { x:290, y:350, w:250, h:80, label:'Auto Motive Shop', style:'building' },
+  { x:470, y:345, w:135, h:65, label:'Machine Shop', style:'building' },
+  { x:615, y:345, w:65,  h:65, label:'Restroom', style:'building' },
+  { x:690, y:345, w:100, h:95, label:'Parking Area', style:'building' },
+
+  // Bottom section
+  { x:10,  y:440, w:480, h:90, label:'Unnamed Building', style:'gray' },
+  { x:470, y:400, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
+  { x:635, y:440, w:50,  h:50, label:'CSG', style:'building' },
+  { x:695, y:400, w:95,  h:50, label:'Unnamed Building', style:'gray' },
+  { x:940, y:400, w:45,  h:90, label:'Unnamed Building', style:'gray' },
+  { x:270, y:530, w:35,  h:90, label:'Unnamed Building', style:'gray' },
+  { x:470, y:530, w:460, h:90, label:'Trees / Green Area', style:'tree' },
+]
+const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569' }
+const BUILDING_GATE: Record<string,string> = {
+  'Medina Lacson Building': 'gate2',
+  'COAS Building': 'gate2',
+  'CAHS Building': 'gate3',
+}
 
 // ── BUILDING / ROOM OPTIONS ───────────────────────────────────
-const BUILDINGS_LIST = ['Medina Lacson Building','New CEA Building','CAHS Building']
+const BUILDINGS_LIST = ['Medina Lacson Building','COAS Building','CAHS Building']
 
 // Each room key is "floor|room" so we can derive floor automatically
 const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:string }[]> = {
@@ -107,13 +164,10 @@ const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:strin
     {floor:'2F', room:'Room 202', label:'2F — Room 202'},
     {floor:'2F', room:'Room 203', label:'2F — Room 203'},
   ],
-  'New CEA Building': [
+  'COAS Building': [
     {floor:'1F', room:'Room 101', label:'1F — Room 101'},
     {floor:'1F', room:'Room 102', label:'1F — Room 102'},
     {floor:'1F', room:'Room 103', label:'1F — Room 103'},
-    {floor:'2F', room:'Room 201', label:'2F — Room 201'},
-    {floor:'2F', room:'Room 204', label:'2F — Room 204'},
-    {floor:'2F', room:'Room 205', label:'2F — Room 205'},
   ],
   'CAHS Building': [
     {floor:'1F', room:'Room 103', label:'1F — Room 103'},
@@ -130,10 +184,8 @@ const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; lab
     {floor:'2F', desc:'Hallway between Rooms 201-202',      label:'2F — Hallway between Rooms 201-202'},
     {floor:'1F', desc:'Near main staircase, Rooms 101-103', label:'1F — Near main staircase, Rooms 101-103'},
   ],
-  'New CEA Building': [
+  'COAS Building': [
     {floor:'1F', desc:'Hallway near Room 101 and 102',     label:'1F — Hallway near Room 101 and 102'},
-    {floor:'1F', desc:'Laboratory area near Room 103',     label:'1F — Laboratory area near Room 103'},
-    {floor:'2F', desc:'Hallway between Rooms 204-205',     label:'2F — Hallway between Rooms 204-205'},
   ],
   'CAHS Building': [
     {floor:'1F', desc:'Main hallway between Rooms 103-104', label:'1F — Main hallway between Rooms 103-104'},
@@ -189,42 +241,89 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
 
   return (
     <div style={{position:'relative',width:'100%'}}>
-      <svg viewBox="0 0 720 560" style={{width:'100%',height:'auto',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
+      <style>{`
+        .ag-map-hint{display:none}
+        @media (max-width: 860px){
+          .ag-map-hint{display:block;text-align:center;font-size:.72rem;color:var(--muted);
+            font-family:var(--mono);letter-spacing:1px;margin-bottom:6px}
+          .ag-map-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;
+            border-radius:8px;border:1px solid var(--border)}
+          .ag-map-scroll svg{border:none;border-radius:0}
+        }
+      `}</style>
+      <div className="ag-map-hint">↔ Swipe to see the full campus map</div>
+      <div className="ag-map-scroll" style={{width:'100%'}}>
+      <svg viewBox="0 0 1040 620" style={{width:'100%',minWidth:820,height:'auto',display:'block',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
         {/* Grid */}
-        {Array.from({length:18}).map((_,i)=><line key={`v${i}`} x1={i*40} y1={0} x2={i*40} y2={560} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
-        {Array.from({length:14}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*40} x2={720} y2={i*40} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
-        {/* Roads */}
-        <rect x={310} y={0} width={40} height={560} fill="rgba(255,255,255,0.04)" rx={2}/>
-        <rect x={0} y={290} width={720} height={40} fill="rgba(255,255,255,0.04)" rx={2}/>
-        <text x={325} y={275} fill="rgba(255,255,255,0.15)" fontSize={8} textAnchor="middle" fontFamily="monospace">ROAD</text>
-        {/* Buildings */}
+        {Array.from({length:27}).map((_,i)=><line key={`v${i}`} x1={i*40} y1={0} x2={i*40} y2={620} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
+        {Array.from({length:16}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*40} x2={1040} y2={i*40} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
+
+        {/* Static areas: walls, trees, unnamed/support buildings */}
+        {STATIC_AREAS.map((a,i)=>(
+          <g key={`area-${i}`}>
+            {a.label && <title>{a.label}</title>}
+            <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={AREA_FILL[a.style]} rx={a.style==='wall'?1:3}
+                  stroke="rgba(255,255,255,0.08)" strokeWidth={1}/>
+            {a.label && a.w>50 && a.h>18 && (
+              <text x={a.x+a.w/2} y={a.y+a.h/2+2.5} fill="rgba(255,255,255,0.45)" fontSize={6.5} textAnchor="middle"
+                    fontFamily="monospace" style={{pointerEvents:'none'}}>{a.label.toUpperCase()}</text>
+            )}
+          </g>
+        ))}
+
+        {/* Planned evacuation routes (always visible, faint reference lines) */}
+        {EVAC_ROUTES.map(r=>(
+          <polyline key={r.id} points={r.points} fill="none" stroke="#22c55e" strokeWidth={1.5}
+                    strokeDasharray="5 4" opacity={0.35} markerEnd="url(#evacArrow)"/>
+        ))}
+        <defs>
+          <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M1 1L9 5L1 9Z" fill="#22c55e" opacity={0.6}/>
+          </marker>
+        </defs>
+
+        {/* Gates */}
+        {GATES.map(g=>(
+          <g key={g.id}>
+            <rect x={g.x} y={g.y} width={g.w} height={g.h} fill="#0d1421" stroke="#22c55e" strokeWidth={1.5} rx={4}/>
+            <text x={g.x+g.w/2} y={g.y+g.h/2-1} textAnchor="middle" fontSize={8} fill="#22c55e">🚪</text>
+            <text x={g.x+g.w/2} y={g.y+g.h-4} textAnchor="middle" fontSize={5} fill="#22c55e" fontFamily="monospace" fontWeight="bold">{g.label}</text>
+          </g>
+        ))}
+
+        {/* Smart buildings (Medina Lacson, COAS, CAHS) — real tracked rooms/devices */}
         {BUILDINGS.map(b=>(
           <g key={b.id}>
             <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={b.color} rx={4} stroke="rgba(255,255,255,0.1)" strokeWidth={1}/>
             <text x={b.x+b.w/2} y={b.y-6} fill="rgba(255,255,255,0.5)" fontSize={7} textAnchor="middle" fontFamily="monospace">{b.name.toUpperCase()}</text>
-            {b.rooms.map(r=>(
-              <g key={r.l}>
-                <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="rgba(255,255,255,0.04)" rx={2} stroke="rgba(255,255,255,0.08)" strokeWidth={1}/>
-                <text x={r.x+r.w/2} y={r.y+r.h/2+3} fill="rgba(255,255,255,0.25)" fontSize={7} textAnchor="middle" fontFamily="monospace">{r.l}</text>
+            {b.floors.map(f=>(
+              <g key={f.label}>
+                <text x={b.x+6} y={f.y+f.h/2+3} fill="rgba(255,255,255,0.35)" fontSize={6.5} fontFamily="monospace" fontWeight="bold">{f.label}</text>
+                {f.rooms.map(r=>(
+                  <g key={r.l}>
+                    <rect x={r.x} y={f.y} width={r.w} height={f.h} fill="rgba(255,255,255,0.04)" rx={2} stroke="rgba(255,255,255,0.08)" strokeWidth={1}/>
+                    <text x={r.x+r.w/2} y={f.y+f.h/2+3} fill="rgba(255,255,255,0.25)" fontSize={7} textAnchor="middle" fontFamily="monospace">{r.l}</text>
+                  </g>
+                ))}
               </g>
             ))}
           </g>
         ))}
-        {/* Assembly area */}
-        <rect x={ASSEMBLY.x} y={ASSEMBLY.y} width={ASSEMBLY.w} height={ASSEMBLY.h} fill="rgba(34,197,94,0.1)" rx={6} stroke="rgba(34,197,94,0.4)" strokeWidth={1.5} strokeDasharray="4 3"/>
-        <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2-4} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace" fontWeight="bold">ASSEMBLY</text>
-        <text x={ASSEMBLY.x+ASSEMBLY.w/2} y={ASSEMBLY.y+ASSEMBLY.h/2+8} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace">AREA</text>
-        {/* Evacuation route for Orange/Red */}
+        {/* Live evacuation line — appears only while an Orange/Red incident is active */}
         {incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1).map(inc=>{
           const d=devices.find(dv=>dv.device_id===inc.device_id)
           if(!d) return null
           const pos=getRoomPos(d.building,d.floor,d.room)
           if(!pos) return null
+          const gateId = BUILDING_GATE[d.building] || 'gate2'
+          const gate = GATES.find(g=>g.id===gateId)
+          if(!gate) return null
+          const gx=gate.x+gate.w/2, gy=gate.y+gate.h/2
           return (
             <g key={`evac-${inc.incident_id}`}>
-              <line x1={pos.x} y1={pos.y} x2={ASSEMBLY.x} y2={ASSEMBLY.y+ASSEMBLY.h/2} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="6 4" opacity={0.6}/>
-              <polygon points={`${ASSEMBLY.x},${ASSEMBLY.y+ASSEMBLY.h/2} ${ASSEMBLY.x-8},${ASSEMBLY.y+ASSEMBLY.h/2-5} ${ASSEMBLY.x-8},${ASSEMBLY.y+ASSEMBLY.h/2+5}`} fill="#22c55e" opacity={0.6}/>
-              <text x={(pos.x+ASSEMBLY.x)/2} y={(pos.y+ASSEMBLY.y+ASSEMBLY.h/2)/2-6} fill="#22c55e" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.8}>EVACUATION ROUTE</text>
+              <line x1={pos.x} y1={pos.y} x2={gx} y2={gy} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 4" opacity={0.85}/>
+              <polygon points={`${gx},${gy} ${gx-8},${gy-5} ${gx-8},${gy+5}`} fill="#ef4444" opacity={0.85}/>
+              <text x={(pos.x+gx)/2} y={(pos.y+gy)/2-6} fill="#ef4444" fontSize={7} textAnchor="middle" fontFamily="monospace" fontWeight="bold">EVACUATE → {gate.label}</text>
             </g>
           )
         })}
@@ -291,6 +390,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           </g>
         )}
       </svg>
+      </div>
       <div style={{display:'flex',gap:16,marginTop:10,flexWrap:'wrap',fontSize:'.7rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>
         {[{color:'#94a3b8',label:'Gray — Safe'},{color:'#eab308',label:'Yellow — Vaping'},{color:'#f97316',label:'Orange — Small Fire'},{color:'#ef4444',label:'Red — Critical'}].map(l=>(
           <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',background:l.color}}/>{l.label}</div>
