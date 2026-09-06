@@ -58,6 +58,12 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const { device_id } = await req.json();
   if (!device_id) return NextResponse.json({ success: false, message: 'Device ID is required.' });
-  await sql`DELETE FROM devices WHERE device_id=${device_id}`;
-  return NextResponse.json({ success: true, message: 'Device deleted.' });
+  try {
+    await sql`DELETE FROM incidents WHERE device_id=${device_id}`;
+    await sql`DELETE FROM devices WHERE device_id=${device_id}`;
+    return NextResponse.json({ success: true, message: 'Device and its incident history deleted.' });
+  } catch (err: any) {
+    console.error('[DELETE DEVICE] Failed:', err);
+    return NextResponse.json({ success: false, message: `Failed to delete device: ${err.message}` });
+  }
 }

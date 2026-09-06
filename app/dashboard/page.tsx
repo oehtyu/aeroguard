@@ -130,19 +130,19 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
 
   // COAS / chapel / auto row
   { x:225, y:350, w:55,  h:80, label:'University Chapel', style:'building' },
-  { x:290, y:350, w:250, h:80, label:'Auto Motive Shop', style:'building' },
-  { x:470, y:345, w:135, h:65, label:'Machine Shop', style:'building' },
-  { x:615, y:345, w:65,  h:65, label:'Restroom', style:'building' },
-  { x:690, y:345, w:100, h:95, label:'Parking Area', style:'building' },
+  { x:290, y:350, w:160, h:80, label:'Auto Motive Shop', style:'building' },
+  { x:470, y:365, w:135, h:65, label:'Machine Shop', style:'building' },
+  { x:620, y:325, w:65,  h:65, label:'Restroom', style:'building' },
+  { x:790, y:230, w:140, h:95, label:'Parking Area', style:'building' },
 
   // Bottom section
-  { x:10,  y:440, w:480, h:90, label:'Unnamed Building', style:'gray' },
-  { x:470, y:400, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
+  { x:10,  y:440, w:440, h:90, label:'Unnamed Building', style:'gray' },
+  { x:470, y:445, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
   { x:635, y:440, w:50,  h:50, label:'CSG', style:'building' },
   { x:695, y:400, w:95,  h:50, label:'Unnamed Building', style:'gray' },
-  { x:940, y:400, w:45,  h:90, label:'Unnamed Building', style:'gray' },
-  { x:270, y:530, w:35,  h:90, label:'Unnamed Building', style:'gray' },
-  { x:470, y:530, w:460, h:90, label:'Trees / Green Area', style:'tree' },
+  { x:940, y:418, w:45,  h:80, label:'Unnamed Building', style:'gray' },
+  { x:270, y:535, w:35,  h:55, label:'Unnamed Building', style:'gray' },
+  { x:470, y:530, w:460, h:60, label:'Trees / Green Area', style:'tree' },
 ]
 const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569' }
 const BUILDING_GATE: Record<string,string> = {
@@ -264,21 +264,24 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             {a.label && <title>{a.label}</title>}
             <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={AREA_FILL[a.style]} rx={a.style==='wall'?1:3}
                   stroke="rgba(255,255,255,0.08)" strokeWidth={1}/>
-            {a.label && a.w>50 && a.h>18 && (
+            {a.style==='building' && a.label && a.w>50 && a.h>18 && (
               <text x={a.x+a.w/2} y={a.y+a.h/2+2.5} fill="rgba(255,255,255,0.45)" fontSize={6.5} textAnchor="middle"
                     fontFamily="monospace" style={{pointerEvents:'none'}}>{a.label.toUpperCase()}</text>
             )}
           </g>
         ))}
 
-        {/* Planned evacuation routes (always visible, faint reference lines) */}
+        {/* Planned evacuation routes (always visible, permanent reference lines) */}
         {EVAC_ROUTES.map(r=>(
-          <polyline key={r.id} points={r.points} fill="none" stroke="#22c55e" strokeWidth={1.5}
-                    strokeDasharray="5 4" opacity={0.35} markerEnd="url(#evacArrow)"/>
+          <g key={r.id}>
+            <polyline points={r.points} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18}/>
+            <polyline points={r.points} fill="none" stroke="#22c55e" strokeWidth={2.5}
+                      strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)"/>
+          </g>
         ))}
         <defs>
-          <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M1 1L9 5L1 9Z" fill="#22c55e" opacity={0.6}/>
+          <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M1 1L9 5L1 9Z" fill="#22c55e"/>
           </marker>
         </defs>
 
@@ -614,7 +617,7 @@ setModal(null);loadUsers()
       const [floor, ...roomParts] = (form.roomKey||'').split('|')
       const room = roomParts.join('|')
       const occ=checkDeviceOccupied(form.building, floor, room, editId||undefined)
-      if(occ) errs.roomKey=occ
+      if(occ){ errs.roomKey=occ; showToast('error','Room Already Occupied',occ) }
     }
 
     if(Object.keys(errs).length){setFormErrors(errs);return}
