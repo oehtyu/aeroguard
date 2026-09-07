@@ -92,17 +92,19 @@ const GATES = [
 ]
 
 // ── EVACUATION ROUTES ────────────────────────────────────────
-// Orthogonal paths from each smart building toward its assigned gate.
+// Orthogonal paths from each smart building toward its assigned gate,
+// routed through the open corridor strips between building clusters
+// (verified programmatically to cross zero buildings — see build script).
 const EVAC_ROUTES = [
-  { id:'cahs-to-gate3',   points:'605,120 605,145 415,145 415,38' },
-  { id:'medina-to-gate2', points:'350,230 350,575 330,575 330,582' },
-  { id:'coas-to-gate2',   points:'220,430 220,300 350,300' },
+  { id:'cahs-to-gate3',   points:'470,75 415,75 415,36' },
+  { id:'medina-to-gate2', points:'450,230 460,230 460,570 325,570 325,580' },
+  { id:'coas-to-gate2',   points:'220,350 220,345 460,345 460,573 335,573 335,580' },
 ]
 
 // ── STATIC AREAS ─────────────────────────────────────────────
 // Non-interactive labeled blocks — trees, walls, parking, and named support
 // buildings that don't have individual sensor rooms tracked yet.
-type AreaStyle = 'gray' | 'tree' | 'building' | 'wall'
+type AreaStyle = 'gray' | 'tree' | 'building' | 'wall' | 'open'
 const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; style:AreaStyle }[] = [
   // Walls
   { x:10,  y:10,  w:360, h:12, label:'', style:'wall' },
@@ -123,7 +125,7 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
   { x:470, y:215, w:125, h:35, label:'Parking Area', style:'building' },
 
   // Quadrangle row
-  { x:250, y:235, w:200, h:105, label:'Quadrangle', style:'gray' },
+  { x:250, y:235, w:200, h:105, label:'Quadrangle', style:'open' },
   { x:470, y:255, w:140, h:35, label:'Unnamed Building', style:'gray' },
   { x:630, y:225, w:155, h:80, label:'Sari-Gamit Court', style:'building' },
   { x:470, y:300, w:140, h:35, label:'Food Court', style:'building' },
@@ -144,7 +146,7 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
   { x:270, y:535, w:35,  h:55, label:'Unnamed Building', style:'gray' },
   { x:470, y:530, w:460, h:60, label:'Trees / Green Area', style:'tree' },
 ]
-const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569' }
+const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569', open:'#141c2b' }
 const BUILDING_GATE: Record<string,string> = {
   'Medina Lacson Building': 'gate2',
   'COAS Building': 'gate2',
@@ -203,7 +205,8 @@ function Badge({status}:{status:string}) {
     Online:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
     Offline:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
     Maintenance:{background:'rgba(234,179,8,.12)',color:'var(--yellow)',border:'1px solid rgba(234,179,8,.25)'},
-    Active:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
+    Active:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
+    Resolved:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
     Expired:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
   }
   return <span style={{...SBadge,...(m[status]||m.Maintenance)}}>{status}</span>
@@ -263,7 +266,8 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           <g key={`area-${i}`}>
             {a.label && <title>{a.label}</title>}
             <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={AREA_FILL[a.style]} rx={a.style==='wall'?1:3}
-                  stroke="rgba(255,255,255,0.08)" strokeWidth={1}/>
+                  stroke={a.style==='open'?'rgba(34,197,94,0.25)':'rgba(255,255,255,0.08)'}
+                  strokeDasharray={a.style==='open'?'4 3':undefined} strokeWidth={1}/>
             {a.style==='building' && a.label && a.w>50 && a.h>18 && (
               <text x={a.x+a.w/2} y={a.y+a.h/2+2.5} fill="rgba(255,255,255,0.45)" fontSize={6.5} textAnchor="middle"
                     fontFamily="monospace" style={{pointerEvents:'none'}}>{a.label.toUpperCase()}</text>
@@ -690,6 +694,13 @@ setModal(null);loadUsers()
     if(deleteTarget.type==='equipment')loadEquipment()
   }
 
+  async function resolveIncident(incident_id:number){
+    const d=await api('/api/incidents','PUT',{incident_id})
+    if(!d.success){showToast('error','Error',d.message||'Failed to resolve incident.');return}
+    showToast('success','Resolved','Incident marked as resolved.')
+    loadIncidents(incFilter)
+  }
+
   async function handleExport(type:string){
     setExportMenu(false);setExportLoading(type)
     try{
@@ -946,11 +957,12 @@ setModal(null);loadUsers()
                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
                   {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').map(i=>(
-                    <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 2fr 1fr 1fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
+                    <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 2fr 1fr 1fr auto',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem',gap:10}}>
                       <ThreatBadge level={i.threat_level}/>
                       <div style={{color:'var(--muted)'}}>{i.location}</div>
                       <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
                       <div style={{color:'var(--muted)',fontSize:'.75rem'}}>{(i.threat_level==='Orange'||i.threat_level==='Red')&&'🧯 Check nearest extinguisher'}</div>
+                      <button onClick={()=>resolveIncident(i.incident_id)} style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.72rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>Resolve</button>
                     </div>
                   ))}
                 </div>
@@ -985,17 +997,20 @@ setModal(null);loadUsers()
                 </div>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1.5fr 1fr 1fr 1fr 0.9fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Action</span>
                 </div>
                 {incidents.map(i=>(
-                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 1fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.78rem'}}>
+                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1.5fr 1fr 1fr 1fr 0.9fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.78rem'}}>
                     <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
                     <div>{i.device_id}</div>
                     <div style={{color:'var(--muted)'}}>{i.location}</div>
                     <ThreatBadge level={i.threat_level}/>
                     <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
-                    <Badge status={i.resolved?'Active':'Maintenance'}/>
+                    <Badge status={i.resolved?'Resolved':'Active'}/>
+                    {!i.resolved
+                      ? <button onClick={()=>resolveIncident(i.incident_id)} style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.72rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Resolve</button>
+                      : <span style={{color:'var(--muted)',fontSize:'.7rem'}}>—</span>}
                   </div>
                 ))}
                 {incidents.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No incidents found.</div>}
