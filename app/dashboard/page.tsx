@@ -11,12 +11,12 @@ const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Ora
 // ── STATIC BUILDING / ROOM / EXTINGUISHER CONFIG ─────────────
 // Each room has a fixed SVG center point on the 2D map
 const ROOM_CONFIGS: Record<string, { x:number; y:number; building:string; floor:string; room:string }> = {
-  'Medina Lacson Building|1F|Room 101': { x:280, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
-  'Medina Lacson Building|1F|Room 102': { x:340, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
-  'Medina Lacson Building|1F|Room 103': { x:400, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
-  'Medina Lacson Building|2F|Room 201': { x:280, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
-  'Medina Lacson Building|2F|Room 202': { x:340, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
-  'Medina Lacson Building|2F|Room 203': { x:400, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
+  'Medina Lacson Building|1F|Room 101': { x:300, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
+  'Medina Lacson Building|1F|Room 102': { x:360, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
+  'Medina Lacson Building|1F|Room 103': { x:420, y:185, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
+  'Medina Lacson Building|2F|Room 201': { x:300, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
+  'Medina Lacson Building|2F|Room 202': { x:360, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
+  'Medina Lacson Building|2F|Room 203': { x:420, y:155, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
   'COAS Building|1F|Room 101': { x:50, y:390, building:'COAS Building', floor:'1F', room:'Room 101' },
   'COAS Building|1F|Room 102': { x:115, y:390, building:'COAS Building', floor:'1F', room:'Room 102' },
   'COAS Building|1F|Room 103': { x:180, y:390, building:'COAS Building', floor:'1F', room:'Room 103' },
@@ -30,12 +30,12 @@ const ROOM_CONFIGS: Record<string, { x:number; y:number; building:string; floor:
 
 const EXT_CONFIGS: Record<string, { x:number; y:number }> = {
   // ── Medina Lacson Building ────────────────────────────────
-  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:310, y:150 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:310, y:150 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:310, y:150 },
-  'Medina Lacson Building|1F|Near main staircase':                { x:310, y:200 },
-  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:310, y:200 },
-  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:310, y:200 },
+  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:330, y:150 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:330, y:150 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:330, y:150 },
+  'Medina Lacson Building|1F|Near main staircase':                { x:330, y:200 },
+  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:330, y:200 },
+  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:330, y:200 },
 
   // ── COAS Building ─────────────────────────────────────────
   'COAS Building|1F|Hallway near Room 101':                       { x:100, y:390 },
@@ -68,10 +68,10 @@ function getExtPos(building:string, floor:string, desc:string): {x:number;y:numb
 // is a static labeled area. Evacuation routes lead to Gate 2 (Medina Lacson
 // + COAS cluster) or Gate 3 (CAHS), matching the drawn arrows.
 const BUILDINGS = [
-  { id:'medina', name:'Medina Lacson Building', x:250, y:140, w:200, h:90, color:'#1e3a5f',
+  { id:'medina', name:'Medina Lacson Building', x:270, y:140, w:200, h:90, color:'#1e3a5f',
     floors:[
-      { label:'2F', y:140, h:40, rooms:[{l:'201',x:260,w:55},{l:'202',x:320,w:55},{l:'203',x:380,w:60}] },
-      { label:'1F', y:180, h:50, rooms:[{l:'101',x:260,w:55},{l:'102',x:320,w:55},{l:'103',x:380,w:60}] },
+      { label:'2F', y:140, h:40, rooms:[{l:'201',x:280,w:55},{l:'202',x:340,w:55},{l:'203',x:400,w:60}] },
+      { label:'1F', y:180, h:50, rooms:[{l:'101',x:280,w:55},{l:'102',x:340,w:55},{l:'103',x:400,w:60}] },
     ] },
   { id:'coas', name:'COAS Building', x:10, y:350, w:210, h:80, color:'#2d1e5f',
     floors:[
@@ -97,8 +97,8 @@ const GATES = [
 // (verified programmatically to cross zero buildings — see build script).
 const EVAC_ROUTES = [
   { id:'cahs-to-gate3',   points:'470,75 415,75 415,36' },
-  { id:'medina-to-gate2', points:'450,230 460,230 460,570 325,570 325,580' },
-  { id:'coas-to-gate2',   points:'220,350 220,345 460,345 460,573 335,573 335,580' },
+  { id:'medina-to-gate2', points:'470,230 485,230 485,570 325,570 325,580' },
+  { id:'coas-to-gate2',   points:'220,350 220,345 485,345 485,573 335,573 335,580' },
 ]
 
 // ── STATIC AREAS ─────────────────────────────────────────────
@@ -120,31 +120,31 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
 
   // Main row (around Medina Lacson)
   { x:10,  y:145, w:210, h:195, label:'Trees / Green Area', style:'tree' },
-  { x:470, y:140, w:125, h:65, label:'Campus Library', style:'building' },
-  { x:610, y:140, w:155, h:80, label:'Trees / Green Area', style:'tree' },
-  { x:470, y:215, w:125, h:35, label:'Parking Area', style:'building' },
+  { x:500, y:140, w:135, h:65, label:'Campus Library', style:'building' },
+  { x:660, y:140, w:140, h:80, label:'Trees / Green Area', style:'tree' },
+  { x:500, y:215, w:135, h:35, label:'Parking Area', style:'building' },
 
   // Quadrangle row
-  { x:250, y:235, w:200, h:105, label:'Quadrangle', style:'open' },
-  { x:470, y:255, w:140, h:35, label:'Unnamed Building', style:'gray' },
-  { x:630, y:225, w:155, h:80, label:'Sari-Gamit Court', style:'building' },
-  { x:470, y:300, w:140, h:35, label:'Food Court', style:'building' },
+  { x:270, y:235, w:200, h:105, label:'Quadrangle', style:'open' },
+  { x:500, y:260, w:135, h:35, label:'Unnamed Building', style:'gray' },
+  { x:660, y:230, w:140, h:80, label:'Sari-Gamit Court', style:'building' },
+  { x:500, y:305, w:135, h:35, label:'Food Court', style:'building' },
 
   // COAS / chapel / auto row
-  { x:225, y:350, w:55,  h:80, label:'University Chapel', style:'building' },
-  { x:290, y:350, w:160, h:80, label:'Auto Motive Shop', style:'building' },
-  { x:470, y:365, w:135, h:65, label:'Machine Shop', style:'building' },
-  { x:620, y:325, w:65,  h:65, label:'Restroom', style:'building' },
-  { x:790, y:230, w:140, h:95, label:'Parking Area', style:'building' },
+  { x:245, y:350, w:55,  h:80, label:'University Chapel', style:'building' },
+  { x:310, y:350, w:160, h:80, label:'Auto Motive Shop', style:'building' },
+  { x:500, y:365, w:135, h:65, label:'Machine Shop', style:'building' },
+  { x:660, y:325, w:65,  h:65, label:'Restroom', style:'building' },
+  { x:830, y:325, w:105, h:95, label:'Parking Area', style:'building' },
 
   // Bottom section
-  { x:10,  y:440, w:440, h:90, label:'Unnamed Building', style:'gray' },
-  { x:470, y:445, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
-  { x:635, y:440, w:50,  h:50, label:'CSG', style:'building' },
-  { x:695, y:400, w:95,  h:50, label:'Unnamed Building', style:'gray' },
+  { x:10,  y:440, w:450, h:90, label:'Unnamed Building', style:'gray' },
+  { x:500, y:445, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
+  { x:665, y:445, w:50,  h:50, label:'CSG', style:'building' },
+  { x:830, y:445, w:95,  h:50, label:'Unnamed Building', style:'gray' },
   { x:940, y:418, w:45,  h:80, label:'Unnamed Building', style:'gray' },
   { x:270, y:535, w:35,  h:55, label:'Unnamed Building', style:'gray' },
-  { x:470, y:530, w:460, h:60, label:'Trees / Green Area', style:'tree' },
+  { x:500, y:530, w:460, h:60, label:'Trees / Green Area', style:'tree' },
 ]
 const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569', open:'#141c2b' }
 const BUILDING_GATE: Record<string,string> = {
