@@ -9,53 +9,58 @@ const LAST_ACTIVE_KEY = 'ag_last_active'
 const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
 
 // ── STATIC BUILDING / ROOM / EXTINGUISHER CONFIG ─────────────
-// Each room has a fixed SVG center point on the 2D map
+// Coordinates rebuilt to match the draw.io campus reference 1:1 in
+// proportion (viewBox is now 1520x800 to match its aspect ratio).
 const ROOM_CONFIGS: Record<string, { x:number; y:number; building:string; floor:string; room:string }> = {
-  // Medina Lacson — 2F band 140-180 (center 160), 1F band 188-238 (center 213)
-  'Medina Lacson Building|2F|Room 201': { x:305, y:160, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
-  'Medina Lacson Building|2F|Room 202': { x:370, y:160, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
-  'Medina Lacson Building|2F|Room 203': { x:435, y:160, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
-  'Medina Lacson Building|1F|Room 101': { x:305, y:213, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
-  'Medina Lacson Building|1F|Room 102': { x:370, y:213, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
-  'Medina Lacson Building|1F|Room 103': { x:435, y:213, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
+  // Medina Lacson — 2F band 202-246 (center 224), 1F band 254-298 (center 276)
+  'Medina Lacson Building|2F|Room 201': { x:410, y:224, building:'Medina Lacson Building', floor:'2F', room:'Room 201' },
+  'Medina Lacson Building|2F|Room 202': { x:540, y:224, building:'Medina Lacson Building', floor:'2F', room:'Room 202' },
+  'Medina Lacson Building|2F|Room 203': { x:670, y:224, building:'Medina Lacson Building', floor:'2F', room:'Room 203' },
+  'Medina Lacson Building|1F|Room 101': { x:410, y:276, building:'Medina Lacson Building', floor:'1F', room:'Room 101' },
+  'Medina Lacson Building|1F|Room 102': { x:540, y:276, building:'Medina Lacson Building', floor:'1F', room:'Room 102' },
+  'Medina Lacson Building|1F|Room 103': { x:670, y:276, building:'Medina Lacson Building', floor:'1F', room:'Room 103' },
 
-  // COAS — single floor, band 360-420 (center 390) — unchanged, this was already right
-  'COAS Building|1F|Room 101': { x:50,  y:390, building:'COAS Building', floor:'1F', room:'Room 101' },
-  'COAS Building|1F|Room 102': { x:115, y:390, building:'COAS Building', floor:'1F', room:'Room 102' },
-  'COAS Building|1F|Room 103': { x:180, y:390, building:'COAS Building', floor:'1F', room:'Room 103' },
+  // COAS — single floor, band 500-565 (center 533)
+  'COAS Building|1F|Room 101': { x:40,  y:533, building:'COAS Building', floor:'1F', room:'Room 101' },
+  'COAS Building|1F|Room 102': { x:111, y:533, building:'COAS Building', floor:'1F', room:'Room 102' },
+  'COAS Building|1F|Room 103': { x:182, y:533, building:'COAS Building', floor:'1F', room:'Room 103' },
 
-  // CAHS — 1F band 30-72 (center 51), 2F band 80-122 (center 101)
-  'CAHS Building|1F|Room 103': { x:520, y:51,  building:'CAHS Building', floor:'1F', room:'Room 103' },
-  'CAHS Building|1F|Room 104': { x:605, y:51,  building:'CAHS Building', floor:'1F', room:'Room 104' },
-  'CAHS Building|1F|Room 105': { x:690, y:51,  building:'CAHS Building', floor:'1F', room:'Room 105' },
-  'CAHS Building|2F|Room 202': { x:520, y:101, building:'CAHS Building', floor:'2F', room:'Room 202' },
-  'CAHS Building|2F|Room 203': { x:605, y:101, building:'CAHS Building', floor:'2F', room:'Room 203' },
-  'CAHS Building|2F|Room 204': { x:690, y:101, building:'CAHS Building', floor:'2F', room:'Room 204' },
+  // CAHS — 1F band 44-94 (center 69), 2F band 104-154 (center 129)
+  'CAHS Building|1F|Room 103': { x:888,  y:69,  building:'CAHS Building', floor:'1F', room:'Room 103' },
+  'CAHS Building|1F|Room 104': { x:998,  y:69,  building:'CAHS Building', floor:'1F', room:'Room 104' },
+  'CAHS Building|1F|Room 105': { x:1108, y:69,  building:'CAHS Building', floor:'1F', room:'Room 105' },
+  'CAHS Building|2F|Room 202': { x:888,  y:129, building:'CAHS Building', floor:'2F', room:'Room 202' },
+  'CAHS Building|2F|Room 203': { x:998,  y:129, building:'CAHS Building', floor:'2F', room:'Room 203' },
+  'CAHS Building|2F|Room 204': { x:1108, y:129, building:'CAHS Building', floor:'2F', room:'Room 204' },
 }
 
 const EXT_CONFIGS: Record<string, { x:number; y:number }> = {
-  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:337, y:160 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:337, y:160 },
-  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:337, y:160 },
-  'Medina Lacson Building|1F|Near main staircase':                { x:337, y:213 },
-  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:337, y:213 },
-  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:337, y:213 },
+  // Medina Lacson
+  'Medina Lacson Building|2F|Hallway Rooms 201-202':              { x:475, y:224 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201-202':      { x:475, y:224 },
+  'Medina Lacson Building|2F|Hallway between Rooms 201 and 202':  { x:475, y:224 },
+  'Medina Lacson Building|1F|Near main staircase':                { x:475, y:276 },
+  'Medina Lacson Building|1F|Near main staircase, Room 101':      { x:475, y:276 },
+  'Medina Lacson Building|1F|Near main staircase, Rooms 101-103': { x:475, y:276 },
 
-  'COAS Building|1F|Hallway near Room 101':                       { x:82, y:390 },
-  'COAS Building|1F|Hallway near Room 101 and 102':               { x:82, y:390 },
+  // COAS
+  'COAS Building|1F|Hallway near Room 101':                       { x:76, y:533 },
+  'COAS Building|1F|Hallway near Room 101 and 102':               { x:76, y:533 },
 
-  'CAHS Building|1F|Main hallway 103-104':                        { x:562, y:51 },
-  'CAHS Building|1F|Main hallway between Rooms 103-104':          { x:562, y:51 },
-  'CAHS Building|1F|Main hallway between Rooms 103 and 104':      { x:562, y:51 },
-  'CAHS Building|1F|Main hallway between R':                      { x:562, y:51 },
-  'CAHS Building|1F|Supply room near Room 105':                   { x:712, y:51 },
-  'CAHS Building|1F|Supply room near Rooms 105':                  { x:712, y:51 },
-  'CAHS Building|2F|Hallway Rooms 201-202':                       { x:562, y:101 },
-  'CAHS Building|2F|Hallway between Rooms 201-202':               { x:562, y:101 },
-  'CAHS Building|2F|Hallway between Rooms 201 and 202':           { x:562, y:101 },
-  'CAHS Building|2F|Near nursing lab Room 203':                   { x:630, y:112 },
-  'CAHS Building|2F|Near nursing lab Room 203 area':              { x:630, y:112 },
+  // CAHS
+  'CAHS Building|1F|Main hallway 103-104':                        { x:943,  y:69 },
+  'CAHS Building|1F|Main hallway between Rooms 103-104':          { x:943,  y:69 },
+  'CAHS Building|1F|Main hallway between Rooms 103 and 104':      { x:943,  y:69 },
+  'CAHS Building|1F|Main hallway between R':                      { x:943,  y:69 },
+  'CAHS Building|1F|Supply room near Room 105':                   { x:1135, y:69 },
+  'CAHS Building|1F|Supply room near Rooms 105':                  { x:1135, y:69 },
+  'CAHS Building|2F|Hallway Rooms 201-202':                       { x:943,  y:129 },
+  'CAHS Building|2F|Hallway between Rooms 201-202':               { x:943,  y:129 },
+  'CAHS Building|2F|Hallway between Rooms 201 and 202':           { x:943,  y:129 },
+  'CAHS Building|2F|Near nursing lab Room 203':                   { x:1020, y:140 },
+  'CAHS Building|2F|Near nursing lab Room 203 area':              { x:1020, y:140 },
 }
+
 function getRoomPos(building:string, floor:string, room:string) {
   return ROOM_CONFIGS[`${building}|${floor}|${room}`] || null
 }
@@ -64,88 +69,87 @@ function getExtPos(building:string, floor:string, desc:string): {x:number;y:numb
 }
 
 // ── BUILDING SVG BLUEPRINTS ───────────────────────────────────
-// Matches the campus layout diagram. Medina Lacson, COAS, and CAHS are the
-// three "smart" buildings with real tracked rooms/devices. Everything else
-// is a static labeled area. Evacuation routes lead to Gate 2 (Medina Lacson
-// + COAS cluster) or Gate 3 (CAHS), matching the drawn arrows.
+// Positions match the draw.io reference exactly (same relative
+// placement, gaps, and proportions). Medina Lacson, COAS, and CAHS
+// are the three "smart" buildings with real tracked rooms/devices.
 const BUILDINGS = [
-  { id:'medina', name:'Medina Lacson Building', x:270, y:140, w:200, h:98, color:'#1e3a5f',
+  { id:'medina', name:'Medina Lacson Building', x:328, y:202, w:423, h:105, color:'#1e3a5f',
     floors:[
-      { label:'2F', y:140, h:40, rooms:[{l:'201',x:275,w:60},{l:'202',x:340,w:60},{l:'203',x:405,w:60}] },
-      { label:'1F', y:188, h:50, rooms:[{l:'101',x:275,w:60},{l:'102',x:340,w:60},{l:'103',x:405,w:60}] },
+      { label:'2F', y:202, h:44, rooms:[{l:'201',x:350,w:120},{l:'202',x:480,w:120},{l:'203',x:610,w:120}] },
+      { label:'1F', y:254, h:44, rooms:[{l:'101',x:350,w:120},{l:'102',x:480,w:120},{l:'103',x:610,w:120}] },
     ] },
-  { id:'coas', name:'COAS Building', x:10, y:350, w:210, h:80, color:'#2d1e5f',
+  { id:'coas', name:'COAS Building', x:0, y:500, w:222, h:65, color:'#2d1e5f',
     floors:[
-      { label:'1F', y:360, h:60, rooms:[{l:'101',x:20,w:60},{l:'102',x:85,w:60},{l:'103',x:150,w:60}] },
+      { label:'1F', y:500, h:65, rooms:[{l:'101',x:10,w:60},{l:'102',x:81,w:60},{l:'103',x:152,w:60}] },
     ] },
-  { id:'cahs', name:'CAHS Building', x:470, y:30, w:270, h:92, color:'#3a1a2f',
+  { id:'cahs', name:'CAHS Building', x:830, y:44, w:335, h:110, color:'#3a1a2f',
     floors:[
-      { label:'1F', y:30, h:42, rooms:[{l:'103',x:480,w:80},{l:'104',x:565,w:80},{l:'105',x:650,w:80}] },
-      { label:'2F', y:80, h:42, rooms:[{l:'202',x:480,w:80},{l:'203',x:565,w:80},{l:'204',x:650,w:80}] },
+      { label:'1F', y:44,  h:50, rooms:[{l:'103',x:838,w:100},{l:'104',x:948,w:100},{l:'105',x:1058,w:100}] },
+      { label:'2F', y:104, h:50, rooms:[{l:'202',x:838,w:100},{l:'203',x:948,w:100},{l:'204',x:1058,w:100}] },
     ] },
 ]
 
 // ── GATES ────────────────────────────────────────────────────
 const GATES = [
-  { id:'gate1', label:'GATE 1', x:990, y:430, w:35, h:32 },
-  { id:'gate2', label:'GATE 2', x:310, y:580, w:40, h:28 },
-  { id:'gate3', label:'GATE 3', x:395, y:8,   w:40, h:28 },
+  { id:'gate1', label:'GATE 1', x:1476, y:640, w:36, h:78 },
+  { id:'gate2', label:'GATE 2', x:718,  y:726, w:60, h:36 },
+  { id:'gate3', label:'GATE 3', x:568,  y:0,   w:64, h:26 },
 ]
 
 // ── EVACUATION ROUTES ────────────────────────────────────────
-// Orthogonal paths from each smart building toward its assigned gate,
-// routed through the open corridor strips between building clusters
-// (verified programmatically to cross zero buildings — see build script).
+// Follows the same corridor path drawn in the draw.io reference:
+// CAHS → the gap above Medina Lacson → Gate 3; Medina/COAS → the
+// open strip below the quadrangle → Gate 2.
 const EVAC_ROUTES = [
-  { id:'cahs-to-gate3',   points:'470,75 415,75 415,36' },
-  { id:'medina-to-gate2', points:'470,230 485,230 485,570 325,570 325,580' },
-  { id:'coas-to-gate2',   points:'220,350 220,345 485,345 485,573 335,573 335,580' },
+  { id:'cahs-to-gate3',   points:'830,99 600,99 600,26' },
+  { id:'medina-to-gate2', points:'540,307 540,472 748,472 748,726' },
+  { id:'coas-to-gate2',   points:'222,533 748,533 748,726' },
 ]
 
 // ── STATIC AREAS ─────────────────────────────────────────────
-// Non-interactive labeled blocks — trees, walls, parking, and named support
-// buildings that don't have individual sensor rooms tracked yet.
+// Every block traced from the draw.io reference, at the same
+// relative position and proportions.
 type AreaStyle = 'gray' | 'tree' | 'building' | 'wall' | 'open'
 const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; style:AreaStyle }[] = [
   // Walls
-  { x:10,  y:10,  w:360, h:12, label:'', style:'wall' },
-  { x:460, y:10,  w:560, h:12, label:'', style:'wall' },
-  { x:10,  y:595, w:280, h:12, label:'', style:'wall' },
-  { x:370, y:595, w:560, h:12, label:'', style:'wall' },
-  { x:1005,y:30,  w:20,  h:380,label:'', style:'wall' },
+  { x:0,    y:0,   w:540, h:20,  label:'', style:'wall' },
+  { x:650,  y:0,   w:870, h:20,  label:'', style:'wall' },
+  { x:1487, y:0,   w:33,  h:800, label:'', style:'wall' },
+  { x:0,    y:740, w:700, h:22,  label:'', style:'wall' },
+  { x:800,  y:740, w:720, h:22,  label:'', style:'wall' },
 
   // Top row
-  { x:10,  y:30,  w:360, h:55, label:'Unnamed Building', style:'gray' },
-  { x:800, y:30,  w:115, h:70, label:'Unnamed Building', style:'gray' },
-  { x:940, y:30,  w:45,  h:380,label:'Unnamed Building', style:'gray' },
+  { x:0,    y:44, w:540, h:76,  label:'Unnamed Building', style:'gray' },
+  { x:692,  y:44, w:118, h:76,  label:'CAHS (Annex)',     style:'gray' },
+  { x:1180, y:44, w:180, h:100, label:'Unnamed Building', style:'gray' },
+  { x:1405, y:44, w:68,  h:580, label:'Unnamed Building', style:'gray' },
 
   // Main row (around Medina Lacson)
-  { x:10,  y:145, w:210, h:195, label:'Trees / Green Area', style:'tree' },
-  { x:500, y:140, w:135, h:65, label:'Campus Library', style:'building' },
-  { x:660, y:140, w:140, h:80, label:'Trees / Green Area', style:'tree' },
-  { x:500, y:215, w:135, h:35, label:'Parking Area', style:'building' },
+  { x:0,    y:204, w:313, h:237, label:'Trees / Green Area', style:'tree' },
+  { x:900,  y:206, w:192, h:98,  label:'Campus Library',     style:'building' },
+  { x:1112, y:200, w:232, h:118, label:'Trees / Green Area', style:'tree' },
+  { x:900,  y:317, w:178, h:27,  label:'Parking Area',       style:'building' },
 
   // Quadrangle row
-  { x:270, y:235, w:200, h:105, label:'Quadrangle', style:'open' },
-  { x:500, y:260, w:135, h:35, label:'Unnamed Building', style:'gray' },
-  { x:660, y:230, w:140, h:80, label:'Sari-Gamit Court', style:'building' },
-  { x:500, y:305, w:135, h:35, label:'Food Court', style:'building' },
+  { x:328, y:337, w:400, h:105, label:'Quadrangle',       style:'open' },
+  { x:858, y:360, w:222, h:27,  label:'Unnamed Building', style:'gray' },
+  { x:1112,y:332, w:232, h:88,  label:'Sari-Gamit Court', style:'building' },
+  { x:868, y:403, w:203, h:32,  label:'Food Court',       style:'building' },
 
   // COAS / chapel / auto row
-  { x:245, y:350, w:55,  h:80, label:'University Chapel', style:'building' },
-  { x:310, y:350, w:160, h:80, label:'Auto Motive Shop', style:'building' },
-  { x:500, y:365, w:135, h:65, label:'Machine Shop', style:'building' },
-  { x:660, y:325, w:65,  h:65, label:'Restroom', style:'building' },
-  { x:830, y:325, w:105, h:95, label:'Parking Area', style:'building' },
+  { x:232, y:500, w:78,  h:65, label:'University Chapel', style:'building' },
+  { x:320, y:500, w:378, h:65, label:'Auto Motive Shop',  style:'building' },
+  { x:875, y:460, w:190, h:57, label:'Machine Shop',      style:'building' },
+  { x:1090,y:463, w:60,  h:52, label:'Restroom',          style:'building' },
+  { x:1173,y:460, w:175, h:85, label:'Parking Area',      style:'building' },
 
   // Bottom section
-  { x:10,  y:440, w:450, h:90, label:'Unnamed Building', style:'gray' },
-  { x:500, y:445, w:155, h:85, label:'Registrar / Admin Building', style:'building' },
-  { x:665, y:445, w:50,  h:50, label:'CSG', style:'building' },
-  { x:830, y:445, w:95,  h:50, label:'Unnamed Building', style:'gray' },
-  { x:940, y:418, w:45,  h:80, label:'Unnamed Building', style:'gray' },
-  { x:270, y:535, w:35,  h:55, label:'Unnamed Building', style:'gray' },
-  { x:500, y:530, w:460, h:60, label:'Trees / Green Area', style:'tree' },
+  { x:0,    y:568, w:698, h:150, label:'Unnamed Building',           style:'gray' },
+  { x:868,  y:540, w:228, h:75,  label:'Registrar / Admin Building', style:'building' },
+  { x:1112, y:585, w:42,  h:32,  label:'CSG',                        style:'building' },
+  { x:1173, y:568, w:175, h:57,  label:'Unnamed Building',           style:'gray' },
+  { x:800,  y:627, w:44,  h:90,  label:'Unnamed Building',           style:'gray' },
+  { x:868,  y:627, w:475, h:90,  label:'Trees / Green Area',         style:'tree' },
 ]
 const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569', open:'#141c2b' }
 const BUILDING_GATE: Record<string,string> = {
@@ -257,11 +261,10 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
       `}</style>
       <div className="ag-map-hint">↔ Swipe to see the full campus map</div>
       <div className="ag-map-scroll" style={{width:'100%'}}>
-      <svg viewBox="0 0 1040 620" style={{width:'100%',minWidth:820,height:'auto',display:'block',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
-        {/* Grid */}
-        {Array.from({length:27}).map((_,i)=><line key={`v${i}`} x1={i*40} y1={0} x2={i*40} y2={620} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
-        {Array.from({length:16}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*40} x2={1040} y2={i*40} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
-
+      <svg viewBox="0 0 1520 800" style={{width:'100%',minWidth:1100,height:'auto',display:'block',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
+  {/* Grid */}
+  {Array.from({length:39}).map((_,i)=><line key={`v${i}`} x1={i*40} y1={0} x2={i*40} y2={800} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
+  {Array.from({length:21}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*40} x2={1520} y2={i*40} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
         {/* Static areas: walls, trees, unnamed/support buildings */}
         {STATIC_AREAS.map((a,i)=>(
           <g key={`area-${i}`}>
