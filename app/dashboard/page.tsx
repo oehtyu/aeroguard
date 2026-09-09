@@ -196,14 +196,14 @@ const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; lab
 }
 
 // ── UI HELPERS ────────────────────────────────────────────────
-const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px'}
+const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px',justifySelf:'start',width:'fit-content'}
 
 function Badge({status}:{status:string}) {
-  const m:Record<string,React.CSSProperties>={
+    const m:Record<string,React.CSSProperties>={
     Online:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
     Offline:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
     Maintenance:{background:'rgba(234,179,8,.12)',color:'var(--yellow)',border:'1px solid rgba(234,179,8,.25)'},
-    Active:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
+    Active:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
     Resolved:{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.25)'},
     Expired:{background:'rgba(239,68,68,.12)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)'},
   }
@@ -370,7 +370,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
                   <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
                 </circle>
               )}
-              <circle cx={pos.x} cy={pos.y} r={8} fill={color} opacity={d.status==='Online'?0.9:0.3}/>
+                            <circle cx={pos.x} cy={pos.y} r={8} fill={color} opacity={effectiveStatus(d)==='Online'?0.9:0.3}/>
               <circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke="white" strokeWidth={1} opacity={0.5}/>
               <text x={pos.x} y={pos.y+4} textAnchor="middle" fontSize={8} fill="white" fontWeight="bold">📡</text>
               <text x={pos.x} y={pos.y+18} textAnchor="middle" fontSize={7} fill="rgba(255,255,255,0.8)" fontFamily="monospace">{d.device_id}</text>
@@ -386,7 +386,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
                 <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-62:tip.y+26} fill="white" fontSize={8} fontWeight="bold" fontFamily="monospace">{tip.data.device_id}</text>
                 <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-50:tip.y+38} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.device_name}</text>
                 <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-38:tip.y+50} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.data.floor} · {tip.data.room}</text>
-                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill={tip.data.status==='Online'?'#22c55e':'#ef4444'} fontSize={7} fontFamily="monospace">● {tip.data.status}</text>
+                <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-26:tip.y+62} fill={effectiveStatus(tip.data)==='Online'?'#22c55e':'#ef4444'} fontSize={7} fontFamily="monospace">● {effectiveStatus(tip.data)}</text>
                 <text x={tip.x>500?tip.x-140:tip.x+18} y={tip.y>400?tip.y-14:tip.y+74} fill={THREAT_COLOR[tip.threat]||'#94a3b8'} fontSize={7} fontFamily="monospace">⚠ {tip.threat} Level</text>
               </>
             ):(
@@ -1084,7 +1084,7 @@ setModal(null);loadUsers()
                     <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
                       <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
                       <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
-                      <Badge status={d.status}/>
+                      <Badge status={effectiveStatus(d)}/>
                       <ThreatBadge level={threat}/>
                       <div style={{display:'flex',gap:6}}>
                         <button onClick={()=>{
@@ -1291,7 +1291,7 @@ setModal(null);loadUsers()
                     {lbl('Status')}
                     <select value={form.status||'Online'} onChange={e=>setForm({...form,status:e.target.value})}
                       style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                                            {['Available','Maintenance'].map(s=><option key={s} value={s}>{s}</option>)}
+                            {[{value:'Online',label:'Available'},{value:'Maintenance',label:'Maintenance'}].map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                 </div>
