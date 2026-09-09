@@ -933,13 +933,16 @@ setModal(null);loadUsers()
                   <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                     <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)'}}><span style={{fontWeight:600,fontSize:'.875rem'}}>Live Sensor Readings</span></div>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,padding:'14px 16px'}}>
-                                            {devices.filter(d=>effectiveStatus(d)==='Online').slice(0,4).map(d=>{
+                                              {devices.filter(d=>effectiveStatus(d)==='Online').slice(0,4).map(d=>{
                         const pm=d.pm25_value!=null?parseFloat(d.pm25_value):null
+                        const temp=d.temperature!=null?parseFloat(d.temperature):null
+                        const hum=d.humidity!=null?parseFloat(d.humidity):null
                         return(
                           <div key={d.device_id} style={{background:'var(--panel2)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--border)'}}>
                             <div style={{fontSize:'.65rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:1,marginBottom:4}}>{d.device_id}</div>
                             <div style={{fontSize:'1.4rem',fontWeight:700,fontFamily:'var(--mono)',color:pmColor(pm||0)}}>{pm!=null?pm.toFixed(1):'—'}</div>
                             <div style={{fontSize:'.65rem',color:'var(--muted)'}}>µg/m³ PM2.5</div>
+                            <div style={{fontSize:'.75rem',color:'var(--text)',marginTop:6,fontFamily:'var(--mono)'}}>{temp!=null?temp.toFixed(1)+'°C':'—'} · {hum!=null?hum.toFixed(0)+'%':'—'} RH</div>
                           </div>
                         )
                       })}
