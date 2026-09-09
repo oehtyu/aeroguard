@@ -228,6 +228,11 @@ function RoleBadge({role}:{role:string}) {
 
 const initials=(n:string)=>n.split(' ').map((p:string)=>p[0]).join('').slice(0,2).toUpperCase()
 const pmColor=(v:number)=>v<35?'var(--green)':v<150?'var(--yellow)':v<300?'var(--orange)':'var(--red)'
+const effectiveStatus=(d:any)=>{
+  if(d.status==='Maintenance') return 'Maintenance'
+  const secondsSince=d.last_update?(Date.now()-new Date(d.last_update).getTime())/1000:Infinity
+  return secondsSince<=15?'Online':'Offline'
+}
 const fmtTime=(ts:string)=>{const d=new Date(ts);return d.toLocaleDateString('en-PH',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(s<60)return`${Math.floor(s)}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;return`${Math.floor(s/3600)}h ago`}
 
@@ -712,7 +717,7 @@ setModal(null);loadUsers()
     } finally{setExportLoading(null)}
   }
 
-  const online=devices.filter(d=>d.status==='Online').length
+  const online=devices.filter(d=>effectiveStatus(d)==='Online').length
   const activeAlerts=new Set(incidents.filter(i=>i.threat_level!=='Gray'&&!i.resolved).map(i=>i.device_id)).size
   const todayInc=incidents.filter(i=>new Date(i.created_at)>new Date(Date.now()-86400000)).length
   const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
@@ -896,9 +901,9 @@ setModal(null);loadUsers()
     <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
       <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
       <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
-      <Badge status={d.status}/>
+            <Badge status={effectiveStatus(d)}/>
       <ThreatBadge level={threat}/>
-      <div style={{fontFamily:'var(--mono)',fontSize:'.78rem',color:pmColor(pm||0)}}>{d.status==='Online'&&pm!=null?pm.toFixed(1)+' µg/m³':'—'}</div>
+      <div style={{fontFamily:'var(--mono)',fontSize:'.78rem',color:pmColor(pm||0)}}>{effectiveStatus(d)==='Online'&&pm!=null?pm.toFixed(1)+' µg/m³':'—'}</div>
     </div>
   )
 })}
@@ -928,13 +933,12 @@ setModal(null);loadUsers()
                   <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                     <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)'}}><span style={{fontWeight:600,fontSize:'.875rem'}}>Live Sensor Readings</span></div>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,padding:'14px 16px'}}>
-                      {devices.filter(d=>d.status==='Online').slice(0,4).map(d=>{
-                        const latest=incidents.find(i=>i.device_id===d.device_id)
-                        const pm=parseFloat(latest?.pm25_value||'12.5')
+                                            {devices.filter(d=>effectiveStatus(d)==='Online').slice(0,4).map(d=>{
+                        const pm=d.pm25_value!=null?parseFloat(d.pm25_value):null
                         return(
                           <div key={d.device_id} style={{background:'var(--panel2)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--border)'}}>
                             <div style={{fontSize:'.65rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:1,marginBottom:4}}>{d.device_id}</div>
-                            <div style={{fontSize:'1.4rem',fontWeight:700,fontFamily:'var(--mono)',color:pmColor(pm)}}>{pm.toFixed(1)}</div>
+                            <div style={{fontSize:'1.4rem',fontWeight:700,fontFamily:'var(--mono)',color:pmColor(pm||0)}}>{pm!=null?pm.toFixed(1):'—'}</div>
                             <div style={{fontSize:'.65rem',color:'var(--muted)'}}>µg/m³ PM2.5</div>
                           </div>
                         )
@@ -1284,7 +1288,7 @@ setModal(null);loadUsers()
                     {lbl('Status')}
                     <select value={form.status||'Online'} onChange={e=>setForm({...form,status:e.target.value})}
                       style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                      {['Online','Offline','Maintenance'].map(s=><option key={s} value={s}>{s}</option>)}
+                                            {['Available','Maintenance'].map(s=><option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
