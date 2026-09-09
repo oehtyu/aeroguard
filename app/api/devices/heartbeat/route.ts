@@ -32,13 +32,15 @@ export async function POST(req: NextRequest) {
 
     const device = existing[0];
 
-    await sql`
+        await sql`
       UPDATE devices
-      SET pm25_value=${pm25_value}, pm10_value=${pm10_value}, temperature=${temperature},
-          humidity=${humidity}, current_threat=${threat_level}, status='Online', last_update=NOW()
+      SET pm25_value=COALESCE(${pm25_value}, pm25_value),
+          pm10_value=COALESCE(${pm10_value}, pm10_value),
+          temperature=COALESCE(${temperature}, temperature),
+          humidity=COALESCE(${humidity}, humidity),
+          current_threat=${threat_level}, status='Online', last_update=NOW()
       WHERE device_id=${device_id}
     `;
-
     const openIncident = await sql`
       SELECT incident_id, threat_level FROM incidents
       WHERE device_id=${device_id} AND resolved=FALSE
