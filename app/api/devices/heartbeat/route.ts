@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { sendPushToAll } from '@/lib/push';
+import { sendSmsToResponders } from '@/lib/sms';
 
 export async function GET() {
   try {
@@ -64,11 +65,14 @@ export async function POST(req: NextRequest) {
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
       `;
-      sendPushToAll({
+            sendPushToAll({
         title: `${threat_level} Alert — ${device_id}`,
         body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
         url: '/dashboard',
       }).catch((e: any) => console.error('[PUSH] send failed:', e));
+      sendSmsToResponders(
+        `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
+      ).catch((e: any) => console.error('[SMS] send failed:', e));
     }
     // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
 
