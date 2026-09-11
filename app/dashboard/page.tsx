@@ -258,6 +258,10 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
     return inc?.threat_level||'Gray'
   }
 
+  const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
+  const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
+  const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
+  const activeRoute=activeRouteId?EVAC_ROUTES.find(r=>r.id===activeRouteId):null
   return (
     <div style={{position:'relative',width:'100%'}}>
       <style>{`
@@ -733,7 +737,7 @@ setModal(null);loadUsers()
   const online=devices.filter(d=>effectiveStatus(d)==='Online').length
   const activeAlerts=new Set(incidents.filter(i=>i.threat_level!=='Gray'&&!i.resolved).map(i=>i.device_id)).size
   const todayInc=incidents.filter(i=>new Date(i.created_at)>new Date(Date.now()-86400000)).length
-    const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
+  const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
   const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
   const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
   const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
