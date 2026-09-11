@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import PushSubscribe from '../components/PushSubscribe'
 
 const SESSION_KEY     = 'ag_user'
 
@@ -854,7 +855,8 @@ setModal(null);loadUsers()
               <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:14}}>
+               <div style={{display:'flex',alignItems:'center',gap:14}}>
+            <PushSubscribe/>
             <span style={{fontSize:'.68rem',padding:'3px 10px',borderRadius:20,fontFamily:'var(--mono)',fontWeight:600,textTransform:'uppercase',background:chipBg,color:chipColor,border:`1px solid ${chipBorder}`}}>{user?.user_type}</span>
             <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'.75rem',color:'var(--green)',fontFamily:'var(--mono)'}}><div style={{width:8,height:8,background:'var(--green)',borderRadius:'50%'}}/> SYSTEM LIVE</div>
             <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>{clock}</div>
