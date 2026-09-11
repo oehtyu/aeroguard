@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { sendPushToAll } from '@/lib/push';
 
 export async function GET() {
   try {
@@ -58,10 +59,16 @@ export async function POST(req: NextRequest) {
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
-      await sql`
+            await sql`
         INSERT INTO incidents (device_id, threat_level, pm25_value, pm10_value, temperature, humidity, location)
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
+      `;
+            sendPushToAll({
+        title: `${threat_level} Alert — ${device_id}`,
+        body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
+        url: '/dashboard',
+      }).catch((e: any) => console.error('[PUSH] send failed:', e));
       `;
     }
     // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
@@ -71,4 +78,4 @@ export async function POST(req: NextRequest) {
     console.error('[HEARTBEAT] Failed:', err);
     return NextResponse.json({ success: false, message: `Heartbeat failed: ${err.message}` });
   }
-}
+    }

@@ -487,7 +487,7 @@ export default function Dashboard() {
   loadDevices();loadIncidents()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
   // was: const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
-const r=setInterval(()=>{loadDevices();loadIncidents()},5000)
+const r=setInterval(()=>{loadDevices();loadIncidents()},3000)
 const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents()}}
 document.addEventListener('visibilitychange',onVisible)
   const evts=['mousedown','mousemove','keydown','scroll','touchstart','click']

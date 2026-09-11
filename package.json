@@ -12,6 +12,7 @@
     "react": "^18",
     "react-dom": "^18",
     "@neondatabase/serverless": "^0.9.3",
+    "web-push": "^3.6.7",
     "docx": "^9.0.2",
     "pdf-lib": "^1.17.1"
   },
