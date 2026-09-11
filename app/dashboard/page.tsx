@@ -96,11 +96,24 @@ const GATES = [
 // NEW: Medina's back (north/2F side) → same upper corridor → Gate 3,
 // as a second reference route out of Medina Lacson.
 const EVAC_ROUTES = [
-  { id:'cahs-to-gate3',   points:'622,74 450,74 450,20' },
-  { id:'medina-to-gate3', points:'480,152 480,130 450,130 450,20' },
-  { id:'medina-to-gate2', points:'405,230 405,354 561,354 561,544' },
-  { id:'coas-to-gate2',   points:'166,400 561,400 561,544' },
+  { id:'cahs-to-gate3',   points:'622,74 450,74 450,20', building:'CAHS Building',
+    steps:['Exit the room into the main corridor.','Proceed toward the building\'s west end.','Exit onto the open walkway.','Proceed to Gate 3.'] },
+  { id:'medina-to-gate3', points:'480,152 480,130 450,130 450,20', building:'Medina Lacson Building',
+    steps:['Exit the room into the corridor.','Head to the building\'s north side.','Cross the upper walkway.','Proceed to Gate 3.'] },
+  { id:'medina-to-gate2', points:'405,230 405,354 561,354 561,544', building:'Medina Lacson Building',
+    steps:['Exit the room into the corridor.','Head to the building\'s south exit.','Cross the open quadrangle strip.','Proceed to Gate 2.'] },
+  { id:'coas-to-gate2',   points:'166,400 561,400 561,544', building:'COAS Building',
+    steps:['Exit the room into the corridor.','Exit the building heading east.','Cross the open strip below the quadrangle.','Proceed to Gate 2.'] },
 ]
+
+const BUILDING_EVAC_ROUTE: Record<string,string> = {
+  'Medina Lacson Building': 'medina-to-gate2',
+  'COAS Building': 'coas-to-gate2',
+  'CAHS Building': 'cahs-to-gate3',
+}
+const GROUND_FLOOR: Record<string,string> = {
+  'Medina Lacson Building': '1F', 'COAS Building': '1F', 'CAHS Building': '1F',
+}
 
 // ── STATIC AREAS ─────────────────────────────────────────────
 type AreaStyle = 'gray' | 'tree' | 'building' | 'wall' | 'open'
@@ -279,16 +292,24 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
         ))}
 
         {/* Planned evacuation routes (always visible, permanent reference lines) */}
-        {EVAC_ROUTES.map(r=>(
-          <g key={r.id}>
-            <polyline points={r.points} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18}/>
-            <polyline points={r.points} fill="none" stroke="#22c55e" strokeWidth={2.5}
-                      strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)"/>
-          </g>
-        ))}
+        {EVAC_ROUTES.map(r=>{
+          const isActive=activeRoute&&r.id===activeRoute.id
+          const color=isActive?'#ef4444':'#22c55e'
+          return (
+            <g key={r.id}>
+              <polyline points={r.points} fill="none" stroke={color} strokeWidth={isActive?7:5} opacity={isActive?0.25:0.18}/>
+              <polyline points={r.points} fill="none" stroke={color} strokeWidth={isActive?4:2.5}
+                        strokeDasharray={isActive?undefined:'7 5'} opacity={isActive?1:0.9}
+                        markerEnd={isActive?'url(#evacArrowRed)':'url(#evacArrow)'}/>
+            </g>
+          )
+        })}
         <defs>
           <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M1 1L9 5L1 9Z" fill="#22c55e"/>
+          </marker>
+          <marker id="evacArrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M1 1L9 5L1 9Z" fill="#ef4444"/>
           </marker>
         </defs>
 
@@ -319,24 +340,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             ))}
           </g>
         ))}
-        {/* Live evacuation line — appears only while an Orange/Red incident is active */}
-        {incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1).map(inc=>{
-          const d=devices.find(dv=>dv.device_id===inc.device_id)
-          if(!d) return null
-          const pos=getRoomPos(d.building,d.floor,d.room)
-          if(!pos) return null
-          const gateId = BUILDING_GATE[d.building] || 'gate2'
-          const gate = GATES.find(g=>g.id===gateId)
-          if(!gate) return null
-          const gx=gate.x+gate.w/2, gy=gate.y+gate.h/2
-          return (
-            <g key={`evac-${inc.incident_id}`}>
-              <line x1={pos.x} y1={pos.y} x2={gx} y2={gy} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 4" opacity={0.85}/>
-              <polygon points={`${gx},${gy} ${gx-8},${gy-5} ${gx-8},${gy+5}`} fill="#ef4444" opacity={0.85}/>
-              <text x={(pos.x+gx)/2} y={(pos.y+gy)/2-6} fill="#ef4444" fontSize={8} textAnchor="middle" fontFamily="monospace" fontWeight="bold">EVACUATE → {gate.label}</text>
-            </g>
-          )
-        })}
+       
         {/* Fire extinguishers — rendered from live equipment data */}
         {equipment.map(e=>{
           const pos=getExtPos(e.building, e.floor, e.location_description)
@@ -455,6 +459,9 @@ export default function Dashboard() {
   const [editId,setEditId]=useState<any>(null)
   const [deleteTarget,setDeleteTarget]=useState<any>(null)
   const [incFilter,setIncFilter]=useState('')
+  const [incFrom,setIncFrom]=useState('')
+  const [incTo,setIncTo]=useState('')
+  const [remarksDraft,setRemarksDraft]=useState<Record<number,string>>({})
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [idleWarn,setIdleWarn]=useState(false)
@@ -702,6 +709,10 @@ setModal(null);loadUsers()
     if(deleteTarget.type==='equipment')loadEquipment()
   }
 
+    async function saveRemarks(incident_id:number, response_action:string){
+    await api('/api/incidents','PUT',{incident_id,response_action})
+    loadIncidents(incFilter)
+  }
   async function resolveIncident(incident_id:number){
     const d=await api('/api/incidents','PUT',{incident_id})
     if(!d.success){showToast('error','Error',d.message||'Failed to resolve incident.');return}
@@ -722,7 +733,15 @@ setModal(null);loadUsers()
   const online=devices.filter(d=>effectiveStatus(d)==='Online').length
   const activeAlerts=new Set(incidents.filter(i=>i.threat_level!=='Gray'&&!i.resolved).map(i=>i.device_id)).size
   const todayInc=incidents.filter(i=>new Date(i.created_at)>new Date(Date.now()-86400000)).length
-  const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
+    const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
+  const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
+  const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
+  const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
+  const activeRoute=activeRouteId?EVAC_ROUTES.find(r=>r.id===activeRouteId):null
+  const activeSteps=activeRoute&&activeEvacDevice?[
+    ...(activeEvacDevice.floor!==GROUND_FLOOR[activeEvacDevice.building]?[`Proceed to the nearest stairwell and descend to ${GROUND_FLOOR[activeEvacDevice.building]}.`]:[]),
+    ...activeRoute.steps,
+  ]:null
 
   const navItems=[
     {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
@@ -960,7 +979,15 @@ setModal(null);loadUsers()
             <div>
               <div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
                 <div style={{fontSize:'.85rem',color:'var(--muted)'}}>All markers reflect live database data. Hover for details.</div>
-                {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
+                                {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
+                {activeSteps&&(
+                  <div style={{background:'rgba(239,68,68,.06)',border:'1px solid rgba(239,68,68,.25)',borderRadius:8,padding:'10px 16px',fontSize:'.78rem',color:'var(--text)'}}>
+                    <strong style={{color:'var(--red)'}}>Evacuation Directions:</strong>
+                    <ol style={{margin:'6px 0 0',paddingLeft:18}}>
+                      {activeSteps.map((s,idx)=><li key={idx} style={{marginBottom:2}}>{s}</li>)}
+                    </ol>
+                  </div>
+                )}
               </div>
               <CampusMap devices={devices} incidents={incidents} equipment={equipment}/>
               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
@@ -981,13 +1008,17 @@ setModal(null);loadUsers()
           )}
 
           {/* ══ INCIDENTS ══ */}
-          {view==='incidents'&&(
+            {view==='incidents'&&(
             <div>
-              <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
+              <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
                 <select onChange={e=>{setIncFilter(e.target.value);loadIncidents(e.target.value)}} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.82rem',width:160}}>
                   <option value=''>All Levels</option>
                   {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
+                <input type="date" value={incFrom} onChange={e=>setIncFrom(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
+                <span style={{color:'var(--muted)',fontSize:'.75rem'}}>to</span>
+                <input type="date" value={incTo} onChange={e=>setIncTo(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
+                {(incFrom||incTo)&&<button onClick={()=>{setIncFrom('');setIncTo('')}} style={{background:'transparent',border:'none',color:'var(--muted)',fontSize:'.75rem',cursor:'pointer',textDecoration:'underline'}}>Clear dates</button>}
                 <div style={{flex:1}}/>
                 <div style={{position:'relative'}}>
                   <button onClick={()=>setExportMenu(!exportMenu)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)',display:'flex',alignItems:'center',gap:6}}>
@@ -1007,17 +1038,30 @@ setModal(null);loadUsers()
                 </div>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1.5fr 1fr 1fr 1fr 0.9fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Action</span>
+                                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 0.9fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Remarks</span><span>Action</span>
                 </div>
-                {incidents.map(i=>(
-                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.3fr 1.5fr 1fr 1fr 1fr 0.9fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.78rem'}}>
+                          {incidents.filter(i=>{
+                  if(incFrom&&new Date(i.created_at)<new Date(incFrom)) return false
+                  if(incTo&&new Date(i.created_at)>new Date(incTo+'T23:59:59')) return false
+                  return true
+                }).map(i=>(
+                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 0.9fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.78rem'}}>
                     <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
                     <div>{i.device_id}</div>
                     <div style={{color:'var(--muted)'}}>{i.location}</div>
                     <ThreatBadge level={i.threat_level}/>
                     <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
                     <Badge status={i.resolved?'Resolved':'Active'}/>
+                    <div style={{display:'flex',gap:6}}>
+                      <input
+                        value={remarksDraft[i.incident_id]??i.response_action??''}
+                        onChange={e=>setRemarksDraft(prev=>({...prev,[i.incident_id]:e.target.value}))}
+                        placeholder="Add remarks…"
+                        style={{flex:1,background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:5,padding:'5px 8px',color:'var(--text)',fontSize:'.72rem',fontFamily:'var(--font)'}}
+                      />
+                      <button onClick={()=>saveRemarks(i.incident_id,remarksDraft[i.incident_id]??i.response_action??'')} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:5,color:'var(--muted)',fontSize:'.7rem',cursor:'pointer'}}>Save</button>
+                    </div>
                     {!i.resolved
                       ? <button onClick={()=>resolveIncident(i.incident_id)} style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.72rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Resolve</button>
                       : <span style={{color:'var(--muted)',fontSize:'.7rem'}}>—</span>}

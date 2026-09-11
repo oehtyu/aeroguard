@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { incident_id } = await req.json();
+  const { incident_id, response_action } = await req.json();
+  if (response_action !== undefined) {
+    await sql`UPDATE incidents SET response_action=${response_action} WHERE incident_id=${incident_id}`;
+    return NextResponse.json({ success: true, message: 'Remarks saved.' });
+  }
   await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${incident_id}`;
   return NextResponse.json({ success: true, message: 'Incident resolved.' });
 }
