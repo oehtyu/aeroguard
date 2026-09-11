@@ -2,9 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000
 const SESSION_KEY     = 'ag_user'
-const LAST_ACTIVE_KEY = 'ag_last_active'
 
 const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
 
@@ -468,42 +466,23 @@ export default function Dashboard() {
   const [remarksDraft,setRemarksDraft]=useState<Record<number,string>>({})
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
-  const [idleWarn,setIdleWarn]=useState(false)
   const [exportMenu,setExportMenu]=useState(false)
   const [exportLoading,setExportLoading]=useState<string|null>(null)
   const [otpLoading,setOtpLoading]=useState(false)
   const [visiblePw,setVisiblePw]=useState<Record<string,boolean>>({})
   const [sidebarOpen,setSidebarOpen]=useState(false)
-  const idleTimer=useRef<any>(null)
-  const warnTimer=useRef<any>(null)
 
   const isAdmin=user?.user_type==='Admin'
 
-  const resetIdle=()=>{
-    localStorage.setItem(LAST_ACTIVE_KEY,Date.now().toString())
-    setIdleWarn(false)
-    clearTimeout(idleTimer.current);clearTimeout(warnTimer.current)
-    warnTimer.current=setTimeout(()=>setIdleWarn(true),IDLE_TIMEOUT_MS-2*60*1000)
-    idleTimer.current=setTimeout(()=>doLogout(true),IDLE_TIMEOUT_MS)
-  }
-
-  useEffect(()=>{
+    useEffect(()=>{
   const stored=localStorage.getItem(SESSION_KEY)
   if(!stored){router.push('/login');return}
-  const last=localStorage.getItem(LAST_ACTIVE_KEY)
-  if(last&&Date.now()-parseInt(last)>IDLE_TIMEOUT_MS){
-    localStorage.removeItem(SESSION_KEY);localStorage.removeItem(LAST_ACTIVE_KEY);router.push('/login');return
-  }
   setUser(JSON.parse(stored))
   loadDevices();loadIncidents()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-  // was: const r=setInterval(()=>{loadDevices();loadIncidents()},30000)
-const r=setInterval(()=>{loadDevices();loadIncidents()},3000)
-const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents()}}
-document.addEventListener('visibilitychange',onVisible)
-  const evts=['mousedown','mousemove','keydown','scroll','touchstart','click']
-  evts.forEach(e=>window.addEventListener(e,resetIdle,{passive:true}))
-  resetIdle()
+  const r=setInterval(()=>{loadDevices();loadIncidents()},3000)
+  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents()}}
+  document.addEventListener('visibilitychange',onVisible)
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
   // so it always reflects the one true active session instead of drifting stale.
@@ -511,14 +490,12 @@ document.addEventListener('visibilitychange',onVisible)
     if(e.key===SESSION_KEY){window.location.reload()}
   }
   window.addEventListener('storage',onStorage)
-  return()=>{
+    return()=>{
     clearInterval(t);clearInterval(r)
-    clearTimeout(idleTimer.current);clearTimeout(warnTimer.current)
-    evts.forEach(e=>window.removeEventListener(e,resetIdle))
+    document.removeEventListener('visibilitychange',onVisible)
     window.removeEventListener('storage',onStorage)
   }
-},[])
-
+  },[])
   const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),6000)}
   const api=async(url:string,method='GET',body?:any)=>{
   try{
@@ -544,7 +521,7 @@ document.addEventListener('visibilitychange',onVisible)
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
-    localStorage.removeItem(SESSION_KEY);localStorage.removeItem(LAST_ACTIVE_KEY)
+    localStorage.removeItem(SESSION_KEY);
     if(auto)showToast('info','Session Expired','Logged out due to inactivity.')
     router.push('/login')
   }
@@ -822,13 +799,6 @@ setModal(null);loadUsers()
           }
         }
       `}</style>
-
-      {idleWarn&&(
-        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,background:'rgba(234,179,8,0.95)',color:'#000',padding:'10px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'.85rem',fontWeight:600}}>
-          <span>⚠️ You'll be logged out in 2 minutes due to inactivity.</span>
-          <button onClick={resetIdle} style={{background:'#000',color:'#eab308',border:'none',borderRadius:6,padding:'4px 14px',cursor:'pointer',fontWeight:700,fontSize:'.8rem'}}>Stay Logged In</button>
-        </div>
-      )}
 
       <div className={`ag-overlay${sidebarOpen?' open':''}`} onClick={()=>setSidebarOpen(false)} />
 
