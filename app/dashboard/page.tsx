@@ -464,6 +464,8 @@ export default function Dashboard() {
   const [incFrom,setIncFrom]=useState('')
   const [incTo,setIncTo]=useState('')
   const [remarksDraft,setRemarksDraft]=useState<Record<number,string>>({})
+  const incFilterRef=useRef(incFilter)
+  useEffect(()=>{incFilterRef.current=incFilter},[incFilter])
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [exportMenu,setExportMenu]=useState(false)
@@ -480,8 +482,8 @@ export default function Dashboard() {
   setUser(JSON.parse(stored))
   loadDevices();loadIncidents()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-  const r=setInterval(()=>{loadDevices();loadIncidents()},3000)
-  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents()}}
+  const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current)},3000)
+  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current)}}
   document.addEventListener('visibilitychange',onVisible)
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
@@ -989,10 +991,9 @@ setModal(null);loadUsers()
                   <option value=''>All Levels</option>
                   {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
-                <input type="date" value={incFrom} onChange={e=>setIncFrom(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
+                                <input type="date" value={incFrom} max={incTo||undefined} onChange={e=>setIncFrom(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
                 <span style={{color:'var(--muted)',fontSize:'.75rem'}}>to</span>
-                <input type="date" value={incTo} onChange={e=>setIncTo(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
-                {(incFrom||incTo)&&<button onClick={()=>{setIncFrom('');setIncTo('')}} style={{background:'transparent',border:'none',color:'var(--muted)',fontSize:'.75rem',cursor:'pointer',textDecoration:'underline'}}>Clear dates</button>}
+                <input type="date" value={incTo} min={incFrom||undefined} onChange={e=>setIncTo(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
                 <div style={{flex:1}}/>
                 <div style={{position:'relative'}}>
                   <button onClick={()=>setExportMenu(!exportMenu)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)',display:'flex',alignItems:'center',gap:6}}>
