@@ -60,19 +60,32 @@ export async function POST(req: NextRequest) {
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
-      await sql`
+            await sql`
         INSERT INTO incidents (device_id, threat_level, pm25_value, pm10_value, temperature, humidity, location)
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
       `;
-            sendPushToAll({
-        title: `${threat_level} Alert — ${device_id}`,
-        body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
-        url: '/dashboard',
-      }).catch((e: any) => console.error('[PUSH] send failed:', e));
-      sendSmsToResponders(
-        `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
-      ).catch((e: any) => console.error('[SMS] send failed:', e));
+      // Awaited (not fire-and-forget) — Vercel can tear down a serverless
+      // invocation right after the response is sent, which can silently
+      // kill un-awaited background work before it finishes. Each call is
+      // wrapped so a push/SMS failure never breaks the heartbeat response
+      // itself — the Pi still gets a normal 200 back either way.
+      try {
+        await sendPushToAll({
+          title: `${threat_level} Alert — ${device_id}`,
+          body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
+          url: '/dashboard',
+        });
+      } catch (e: any) {
+        console.error('[PUSH] send failed:', e);
+      }
+      try {
+        await sendSmsToResponders(
+          `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
+        );
+      } catch (e: any) {
+        console.error('[SMS] send failed:', e);
+      }
     }
     // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
 
