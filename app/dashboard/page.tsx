@@ -509,7 +509,25 @@ export default function Dashboard() {
   }
 }
 
-  const loadDevices=async()=>{const d=await api('/api/devices');if(d.success)setDevices(d.data)}
+    const loadDevices=async()=>{
+    const d=await api('/api/devices')
+    if(d.success){
+      setDevices(d.data)
+      const now=Date.now()
+      console.table(d.data.map((dev:any)=>{
+        const sr=dev.sensor_read_at?new Date(dev.sensor_read_at).getTime():null
+        const ps=dev.pi_sent_at?new Date(dev.pi_sent_at).getTime():null
+        const sv=dev.server_received_at?new Date(dev.server_received_at).getTime():null
+        return {
+          device: dev.device_id,
+          'Pi processing (ms)': sr&&ps?ps-sr:null,
+          'Network+Vercel (ms)': ps&&sv?sv-ps:null,
+          'DB→dashboard poll (ms)': sv?now-sv:null,
+          'TOTAL sensor→screen (ms)': sr?now-sr:null,
+        }
+      }))
+    }
+  }
   const loadIncidents=async(level='')=>{const d=await api(`/api/incidents${level?`?level=${level}`:''}`);if(d.success)setIncidents(d.data)}
   const loadUsers=async()=>{const d=await api('/api/users');if(d.success)setUsers(d.data)}
   const loadEquipment=async()=>{const d=await api('/api/equipment');if(d.success)setEquipment(d.data)}
