@@ -7,7 +7,8 @@ export async function GET() {
   try {
     const rows = await sql`
       SELECT device_id, device_name, building, floor, room, status,
-             pm25_value, pm10_value, temperature, humidity, current_threat, last_update
+             pm25_value, pm10_value, temperature, humidity, current_threat, last_update,
+             sensor_read_at, pi_sent_at, server_received_at
       FROM devices ORDER BY device_id ASC
     `;
     return NextResponse.json({ success: true, data: rows });
@@ -22,8 +23,14 @@ export async function GET() {
 // dashboard's Add Device form). This only updates its live values and
 // opens/updates/resolves an incident row as the threat level changes.
 export async function POST(req: NextRequest) {
+  // Stamp the instant this request is actually being handled — this is
+  // the "server_received_at" anchor the dashboard's latency breakdown
+  // (Pi processing / Network+Vercel / DB→dashboard poll) is measured against.
+  const server_received_at = new Date().toISOString();
+
   try {
-    const { device_id, pm25_value, pm10_value, temperature, humidity, threat_level } = await req.json();
+    const { device_id, pm25_value, pm10_value, temperature, humidity, threat_level,
+            sensor_read_at, pi_sent_at } = await req.json();
 
     if (!device_id) return NextResponse.json({ success: false, message: 'Device ID is required.' });
     if (!threat_level) return NextResponse.json({ success: false, message: 'Threat level is required.' });
@@ -40,7 +47,10 @@ export async function POST(req: NextRequest) {
           pm10_value=COALESCE(${pm10_value}, pm10_value),
           temperature=COALESCE(${temperature}, temperature),
           humidity=COALESCE(${humidity}, humidity),
-          current_threat=${threat_level}, status='Online', last_update=NOW()
+          current_threat=${threat_level}, status='Online', last_update=NOW(),
+          sensor_read_at=${sensor_read_at || null},
+          pi_sent_at=${pi_sent_at || null},
+          server_received_at=${server_received_at}
       WHERE device_id=${device_id}
     `;
     const openIncident = await sql`
@@ -60,7 +70,7 @@ export async function POST(req: NextRequest) {
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
-            await sql`
+      await sql`
         INSERT INTO incidents (device_id, threat_level, pm25_value, pm10_value, temperature, humidity, location)
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
@@ -89,7 +99,7 @@ export async function POST(req: NextRequest) {
     }
     // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
 
-    return NextResponse.json({ success: true, message: 'Heartbeat received.' });
+    return NextResponse.json({ success: true, message: 'Heartbeat received.', server_received_at });
   } catch (err: any) {
     console.error('[HEARTBEAT] Failed:', err);
     return NextResponse.json({ success: false, message: `Heartbeat failed: ${err.message}` });
