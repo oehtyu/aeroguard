@@ -3,9 +3,10 @@ import sql from '@/lib/db';
 
 export async function GET() {
   try {
-    const rows = await sql`
+     const rows = await sql`
       SELECT device_id, device_name, building, floor, room, status,
-             pm25_value, pm10_value, temperature, humidity, current_threat, last_update
+             pm25_value, pm10_value, temperature, humidity, current_threat, last_update,
+             sensor_read_at, pi_sent_at, server_received_at
       FROM devices ORDER BY device_id ASC
     `;
     return NextResponse.json({ success: true, data: rows });
