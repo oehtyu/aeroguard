@@ -3,6 +3,9 @@ import sql from '@/lib/db';
 import { sendPushToAll } from '@/lib/push';
 import { sendSmsToResponders } from '@/lib/sms';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const rows = await sql`
