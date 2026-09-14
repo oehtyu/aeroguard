@@ -7,9 +7,9 @@ const IPROG_BULK_URL = 'https://sms.iprogtech.com/api/v1/sms_messages/send_bulk'
 // set. IPROG accepts local "09XXXXXXXXX" numbers directly, so no format
 // conversion is needed (unlike Semaphore).
 export async function sendSmsToResponders(message: string) {
-  const users = await sql`
+    const users = await sql`
     SELECT phone FROM users
-    WHERE user_type IN ('Security', 'DRRM') AND phone IS NOT NULL
+    WHERE user_type IN ('Admin', 'Security', 'DRRM') AND phone IS NOT NULL
   `;
   const numbers = users
     .map((u: any) => (u.phone || '').trim())
