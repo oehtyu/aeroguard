@@ -92,12 +92,14 @@ export async function POST(req: NextRequest) {
       } catch (e: any) {
         console.error('[PUSH] send failed:', e);
       }
-      try {
-        await sendSmsToResponders(
-          `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
-        );
-      } catch (e: any) {
-        console.error('[SMS] send failed:', e);
+      if (threat_level === 'Orange' || threat_level === 'Red') {
+        try {
+          await sendSmsToResponders(
+            `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
+          );
+        } catch (e: any) {
+          console.error('[SMS] send failed:', e);
+        }
       }
     }
     // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
