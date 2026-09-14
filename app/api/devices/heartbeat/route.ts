@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       } catch (e: any) {
         console.error('[PUSH] send failed:', e);
       }
-      if (threat_level === 'Orange' || threat_level === 'Red') {
+      if (threat_level === 'Red') {
         try {
           await sendSmsToResponders(
             `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
