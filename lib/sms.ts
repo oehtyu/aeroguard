@@ -1,6 +1,6 @@
 import sql from './db';
 
-const IPROG_API_TOKEN = process.env.IPROG_API_TOKEN!;
+const IPROG_API_TOKEN = process.env.IPROGSMS_API_KEY!;
 const IPROG_BULK_URL = 'https://sms.iprogtech.com/api/v1/sms_messages/send_bulk';
 
 // Sends `message` to every Security/DRRM account that has a phone number
