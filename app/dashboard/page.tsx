@@ -573,7 +573,7 @@ export default function Dashboard() {
     if(form.phone){const p=validatePhone(form.phone.trim());if(p)errs.phone=p}
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
-    const d=await api('/api/users','POST',{full_name:form.full_name.trim(),username:form.username.trim(),user_type:form.user_type,email:form.email.trim(),phone:form.phone||null})
+        const d=await api('/api/users','POST',{full_name:form.full_name.trim(),username:form.username.trim(),user_type:form.user_type,email:form.email.trim(),phone:form.phone||null,building:form.building||null})
     if(!d.success){showToast('error','Error',d.message);return}
     setOtpLoading(true)
 const otpResult = await api('/api/users/otp','POST',{email:d.email,user_id:d.user_id})
@@ -748,7 +748,7 @@ setModal(null);loadUsers()
   const navItems=[
     {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
-    {id:'incidents',icon:'🔔',label:'Incident Log',section:''},
+    {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
     {id:'devices',icon:'📡',label:'Devices',section:'',admin:true},
     {id:'equipment',icon:'🧯',label:'Fire Equipment',section:'',admin:true},
@@ -1210,11 +1210,20 @@ setModal(null);loadUsers()
                   <div>
                     {lbl('Role')}
                     <select value={form.user_type||'Security'} onChange={e=>setForm({...form,user_type:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                      {['Admin','Security','DRRM','Campus Personnel'].map(r=><option key={r} value={r}>{r}</option>)}
+                       {['Admin','Security','DRRM','Campus Personnel','Faculty'].map(r=><option key={r} value={r}>{r}</option>)}
                     </select>
                   </div>
-                  <div>{lbl('Phone (optional)')}{input('phone','09123456789')}</div>
+                                    <div>{lbl('Phone (optional)')}{input('phone','09123456789')}</div>
                 </div>
+                {form.user_type==='Faculty'&&(
+                  <div style={{marginBottom:16}}>
+                    {lbl('Building (for building-specific alerts)')}
+                    <select value={form.building||''} onChange={e=>setForm({...form,building:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+                      <option value=''>Select a building…</option>
+                      {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div>{lbl('Email (required — OTP will be sent here)')}{input('email','user@bpsu.edu.ph','email')}</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
@@ -1239,7 +1248,7 @@ setModal(null);loadUsers()
                 </div>
                 {lbl('New Role')}
                 <select value={form.user_type||'Security'} onChange={e=>setForm({...form,user_type:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                  {['Admin','Security','DRRM','Campus Personnel'].map(r=><option key={r} value={r}>{r}</option>)}
+                   {['Admin','Security','DRRM','Campus Personnel','Faculty'].map(r=><option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>

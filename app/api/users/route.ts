@@ -22,7 +22,7 @@ function validateUsername(username: string): string | null {
 // ── GET all users ──────────────────────────────────────────
 export async function GET() {
   const rows = await sql`
-    SELECT user_id, username, full_name, user_type, email, phone, is_verified
+    SELECT user_id, username, full_name, user_type, email, phone, is_verified, building
     FROM users ORDER BY user_id ASC
   `;
   return NextResponse.json({ success: true, data: rows });
@@ -30,7 +30,7 @@ export async function GET() {
 
 // ── POST create user (admin action — sends OTP to email) ───
 export async function POST(req: NextRequest) {
-  const { full_name, username, user_type, email, phone } = await req.json();
+  const { full_name, username, user_type, email, phone, building } = await req.json();
 
   if (!full_name?.trim()) return NextResponse.json({ success: false, message: 'Full name is required.' });
   const uErr = validateUsername(username?.trim() || '');
@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
 
   // Create user with a placeholder password — not usable until OTP verified + password set
   const rows = await sql`
-    INSERT INTO users (username, password, full_name, user_type, email, phone, is_verified)
-    VALUES (${username.trim()}, '__UNSET__', ${full_name.trim()}, ${user_type}, ${email.trim()}, ${phone?.trim() || null}, false)
+    INSERT INTO users (username, password, full_name, user_type, email, phone, is_verified, building)
+    VALUES (${username.trim()}, '__UNSET__', ${full_name.trim()}, ${user_type}, ${email.trim()}, ${phone?.trim() || null}, false, ${user_type === 'Faculty' ? (building || null) : null})
     RETURNING user_id, username, full_name, user_type, email
   `;
 

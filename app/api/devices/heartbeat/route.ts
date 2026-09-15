@@ -62,11 +62,13 @@ export async function POST(req: NextRequest) {
       ORDER BY created_at DESC LIMIT 1
     `;
 
-    if (threat_level === 'Gray') {
-      // Threat cleared — resolve any incident still open for this device
+        if (threat_level === 'Gray') {
+      // Threat cleared — resolve any incident still open for this device,
+      // and clear out its responders since the emergency is genuinely over
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
+      await sql`DELETE FROM incident_responses WHERE device_id=${device_id}`;
     } else if (openIncident.length === 0 || openIncident[0].threat_level !== threat_level) {
       // New threat, or it changed level (e.g. Yellow -> Orange) — close the
       // old one (if any) and open a fresh incident at the new level
