@@ -229,8 +229,44 @@ function ThreatBadge({level}:{level:string}) {
     Orange:{background:'rgba(249,115,22,.15)',color:'var(--orange)',border:'1px solid rgba(249,115,22,.3)'},
     Red:{background:'rgba(239,68,68,.15)',color:'var(--red)',border:'1px solid rgba(239,68,68,.35)'},
   }
-  const icons:Record<string,string>={Gray:'⬜',Yellow:'🟡',Orange:'🟠',Red:'🔴'}
+   const icons:Record<string,string>={Gray:'⬜',Yellow:'🟡',Orange:'🟠',Red:'🔴'}
   return <span style={{...SBadge,...(m[level]||m.Gray)}}>{icons[level]} {level}</span>
+}
+
+function initialsOf(name?:string){
+  if(!name) return '?'
+  return name.trim().split(/\s+/).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('')
+}
+
+// Row of avatar circles — filled blue for each responder, empty/dashed for
+// remaining open slots, with a live "X/Y" count. Matches the reference
+// design: overlapping circles, blue = accepted.
+function ResponderAvatars({responders,limit}:{responders:any[],limit:number}){
+  if(!limit) return null
+  const slots=Array.from({length:limit})
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <div style={{display:'flex'}}>
+        {slots.map((_,i)=>{
+          const r=responders[i]
+          return (
+            <div key={i} title={r?.full_name||''} style={{
+              width:30,height:30,borderRadius:'50%',
+              background:r?'linear-gradient(135deg,#0072ff,#00c2ff)':'var(--panel2)',
+              border:r?'2px solid #00c2ff':'2px dashed var(--border)',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:10.5,fontWeight:700,color:r?'#fff':'var(--muted)',
+              marginLeft:i===0?0:-10,boxShadow:r?'0 0 0 2px var(--panel)':'none',
+              zIndex:limit-i,flexShrink:0,transition:'all .2s',
+            }}>
+              {r?initialsOf(r.full_name):''}
+            </div>
+          )
+        })}
+      </div>
+      <span style={{fontSize:'.78rem',fontWeight:600,color:'var(--text)',fontFamily:'var(--mono)'}}>{responders.length}/{limit} responding</span>
+    </div>
+  )
 }
 
 function RoleBadge({role}:{role:string}) {
@@ -465,8 +501,19 @@ export default function Dashboard() {
   const [incFrom,setIncFrom]=useState('')
   const [incTo,setIncTo]=useState('')
   const [remarksDraft,setRemarksDraft]=useState<Record<number,string>>({})
-  const incFilterRef=useRef(incFilter)
+    const incFilterRef=useRef(incFilter)
   useEffect(()=>{incFilterRef.current=incFilter},[incFilter])
+
+  const [respStatus,setRespStatus]=useState<any>(null)
+  const [respDismissed,setRespDismissed]=useState<string>('')
+  const respDeviceRef=useRef<{device_id:string}|null>(null)
+
+  const loadResponses=async()=>{
+    const d=respDeviceRef.current
+    if(!d){setRespStatus(null);return}
+    const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${user?.user_id||''}`)
+    if(res.success)setRespStatus(res.data)
+  }
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [exportMenu,setExportMenu]=useState(false)
@@ -483,8 +530,9 @@ export default function Dashboard() {
   setUser(JSON.parse(stored))
   loadDevices();loadIncidents()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-  const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current)},3000)
-  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current)}}
+    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current)},3000)
+  const rr=setInterval(loadResponses,2000)
+  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses()}}
   document.addEventListener('visibilitychange',onVisible)
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
@@ -493,8 +541,8 @@ export default function Dashboard() {
     if(e.key===SESSION_KEY){window.location.reload()}
   }
   window.addEventListener('storage',onStorage)
-    return()=>{
-    clearInterval(t);clearInterval(r)
+        return()=>{
+    clearInterval(t);clearInterval(r);clearInterval(rr)
     document.removeEventListener('visibilitychange',onVisible)
     window.removeEventListener('storage',onStorage)
   }
@@ -715,6 +763,20 @@ setModal(null);loadUsers()
     await api('/api/incidents','PUT',{incident_id,response_action})
     loadIncidents(incFilter)
   }
+    async function acceptResponse(){
+    const d=respDeviceRef.current
+    if(!d||!user) return
+    setRespStatus((prev:any)=>prev?{...prev,count:prev.count+1,alreadyResponded:true,responders:[...prev.responders,{user_id:user.user_id,full_name:user.full_name}]}:prev)
+    const res=await api('/api/responses','POST',{device_id:d.device_id,user_id:user.user_id,full_name:user.full_name})
+    if(!res.success){
+      showToast('error','Unable to Respond',res.message)
+      loadResponses()
+    }
+  }
+  function declineResponse(){
+    const d=respDeviceRef.current
+    if(d)setRespDismissed(d.device_id)
+  }
   async function resolveIncident(incident_id:number){
     const d=await api('/api/incidents','PUT',{incident_id})
     if(!d.success){showToast('error','Error',d.message||'Failed to resolve incident.');return}
@@ -737,7 +799,16 @@ setModal(null);loadUsers()
   const todayInc=incidents.filter(i=>new Date(i.created_at)>new Date(Date.now()-86400000)).length
   const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
   const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
-  const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
+    const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
+  useEffect(()=>{
+    const newRef=activeEvacDevice?{device_id:activeEvacDevice.device_id}:null
+    const changed=JSON.stringify(newRef)!==JSON.stringify(respDeviceRef.current)
+    respDeviceRef.current=newRef
+    if(changed){
+      if(!newRef){setRespStatus(null);setRespDismissed('')}
+      else loadResponses()
+    }
+  },[activeEvacDevice?.device_id])
   const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
   const activeRoute=activeRouteId?EVAC_ROUTES.find(r=>r.id===activeRouteId):null
   const activeSteps=activeRoute&&activeEvacDevice?[
@@ -882,9 +953,38 @@ setModal(null);loadUsers()
         </div>
 
         <div style={{padding:'24px 28px',flex:1}}>
-          {redInc&&(
-            <div style={{background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:8,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,marginBottom:16,fontSize:'.8rem',color:'var(--red)'}}>
-              🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
+                    {redInc&&(
+            <div style={{background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:'.8rem',color:'var(--red)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:respStatus?10:0}}>
+                🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
+              </div>
+              {respStatus&&respStatus.limit>0&&<ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>}
+            </div>
+          )}
+          {!redInc&&activeEvacDevice&&respStatus&&respStatus.limit>0&&(
+            <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:8,padding:'10px 16px',marginBottom:16}}>
+              <div style={{fontSize:'.78rem',color:'var(--orange)',marginBottom:10}}>🟠 <strong>Orange Alert</strong> — {activeEvacInc?.location}. Response requested.</div>
+              <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+            </div>
+          )}
+
+          {respStatus&&!respStatus.alreadyResponded&&!respStatus.full&&respDismissed!==respDeviceRef.current?.device_id&&(
+            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',backdropFilter:'blur(4px)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <div style={{background:'var(--panel)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.4)':'rgba(249,115,22,.4)'}`,borderRadius:14,width:420,maxWidth:'92vw',overflow:'hidden'}}>
+                <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)'}}>
+                  <div style={{fontSize:'.7rem',fontWeight:700,letterSpacing:1,color:respStatus.threat_level==='Red'?'var(--red)':'var(--orange)',marginBottom:6}}>
+                    {respStatus.threat_level==='Red'?'🔴 RED ALERT':'🟠 ORANGE ALERT'} — ACTIVE FIRE
+                  </div>
+                  <div style={{fontSize:'1.05rem',fontWeight:700}}>Can you respond or assist?</div>
+                </div>
+                <div style={{padding:24}}>
+                  <div style={{marginBottom:18}}><ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/></div>
+                  <div style={{display:'flex',gap:10}}>
+                    <button onClick={declineResponse} style={{flex:1,padding:'11px 16px',background:'transparent',border:'1px solid var(--border)',borderRadius:8,color:'var(--muted)',fontSize:'.85rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Unable to Respond</button>
+                    <button onClick={acceptResponse} style={{flex:1,padding:'11px 16px',background:'var(--accent2)',border:'none',borderRadius:8,color:'#fff',fontSize:'.85rem',fontWeight:700,cursor:'pointer',fontFamily:'var(--font)'}}>✅ I Can Respond</button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1215,16 +1315,7 @@ setModal(null);loadUsers()
                   </div>
                                     <div>{lbl('Phone (optional)')}{input('phone','09123456789')}</div>
                 </div>
-                {form.user_type==='Faculty'&&(
-                  <div style={{marginBottom:16}}>
-                    {lbl('Building (for building-specific alerts)')}
-                    <select value={form.building||''} onChange={e=>setForm({...form,building:e.target.value})} style={{width:'100%',background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                      <option value=''>Select a building…</option>
-                      {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div>{lbl('Email (required — OTP will be sent here)')}{input('email','user@bpsu.edu.ph','email')}</div>
+                              <div>{lbl('Email (required — OTP will be sent here)')}{input('email','user@bpsu.edu.ph','email')}</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
