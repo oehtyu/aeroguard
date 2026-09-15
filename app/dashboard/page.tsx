@@ -611,9 +611,9 @@ export default function Dashboard() {
       if(res.data.alreadyResponded)setMyResponses(prev=>new Set(prev).add(d.device_id))
     }
   }
-    const loadReports=async()=>{
-    if(!user) return
-    const d=await api(`/api/reports?${user.user_type==='Admin'?'all=1':'user_id='+user.user_id}`)
+        const loadReports=async(uid?:any,adminFlag?:boolean)=>{
+    if(!uid) return
+    const d=await api(`/api/reports?${adminFlag?'all=1':'user_id='+uid}`)
     if(d.success) setReports(d.data)
   }
   const [userSearch,setUserSearch]=useState('')
@@ -626,16 +626,16 @@ export default function Dashboard() {
 
   const isAdmin=user?.user_type==='Admin'
 
-    useEffect(()=>{
+       useEffect(()=>{
   const stored=localStorage.getItem(SESSION_KEY)
   if(!stored){router.push('/login');return}
-  setUser(JSON.parse(stored))
-    loadDevices();loadIncidents();loadReports()
+  const sessionUser=JSON.parse(stored)
+  setUser(sessionUser)
+    loadDevices();loadIncidents();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current)},3000)
+    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
   const rr=setInterval(loadResponses,2000)
-  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses()}}
-  document.addEventListener('visibilitychange',onVisible)
+  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
   // so it always reflects the one true active session instead of drifting stale.
@@ -1214,7 +1214,7 @@ setModal(null);loadUsers()
 
                     {/* ══ INCIDENT REPORTING ══ */}
           {view==='reports'&&(
-            <ReportingPanel reports={reports} user={user} isAdmin={isAdmin} onSubmitted={loadReports}/>
+           <ReportingPanel reports={reports} user={user} isAdmin={isAdmin} onSubmitted={()=>loadReports(user?.user_id,isAdmin)}/>
           )}
 
           {/* ══ INCIDENTS ══ */}
@@ -1246,36 +1246,47 @@ setModal(null);loadUsers()
                   )}
                 </div>
               </div>
-              <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 0.9fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Remarks</span><span>Action</span>
+            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Reports</span><span>Action</span>
                 </div>
-                          {incidents.filter(i=>{
+                {incidents.filter(i=>{
                   if(incFrom&&new Date(i.created_at)<new Date(incFrom)) return false
                   if(incTo&&new Date(i.created_at)>new Date(incTo+'T23:59:59')) return false
                   return true
-                }).map(i=>(
-                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 0.9fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.78rem'}}>
-                    <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
-                    <div>{i.device_id}</div>
-                    <div style={{color:'var(--muted)'}}>{i.location}</div>
-                    <ThreatBadge level={i.threat_level}/>
-                    <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
-                    <Badge status={i.resolved?'Resolved':'Active'}/>
-                    <div style={{display:'flex',gap:6}}>
-                      <input
-                        value={remarksDraft[i.incident_id]??i.response_action??''}
-                        onChange={e=>setRemarksDraft(prev=>({...prev,[i.incident_id]:e.target.value}))}
-                        placeholder="Add remarks…"
-                        style={{flex:1,background:'var(--panel2)',border:'1px solid var(--border)',borderRadius:5,padding:'5px 8px',color:'var(--text)',fontSize:'.72rem',fontFamily:'var(--font)'}}
-                      />
-                      <button onClick={()=>saveRemarks(i.incident_id,remarksDraft[i.incident_id]??i.response_action??'')} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:5,color:'var(--muted)',fontSize:'.7rem',cursor:'pointer'}}>Save</button>
+                }).map(i=>{
+                  const linkedReports=reports.filter(r=>r.incident_id===i.incident_id)
+                  const submitted=linkedReports.filter(r=>r.status==='Submitted')
+                  return (
+                  <div key={i.incident_id} style={{padding:'10px 20px',borderBottom:'1px solid var(--border)',fontSize:'.78rem'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 1fr',alignItems:'center'}}>
+                      <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
+                      <div>{i.device_id}</div>
+                      <div style={{color:'var(--muted)'}}>{i.location}</div>
+                      <ThreatBadge level={i.threat_level}/>
+                      <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
+                      <Badge status={i.resolved?'Resolved':'Active'}/>
+                      <div style={{color:'var(--muted)',fontSize:'.75rem'}}>
+                        {linkedReports.length===0
+                          ? <span>No responders</span>
+                          : <span>{submitted.length}/{linkedReports.length} report{linkedReports.length!==1?'s':''} submitted</span>}
+                      </div>
+                      {!i.resolved
+                        ? <button onClick={()=>resolveIncident(i.incident_id)} title="Manual override — incidents normally auto-resolve once the sensor reports Gray again" style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.7rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>Force Resolve</button>
+                        : <span style={{color:'var(--muted)',fontSize:'.7rem'}}>—</span>}
                     </div>
-                    {!i.resolved
-                      ? <button onClick={()=>resolveIncident(i.incident_id)} style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.72rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Resolve</button>
-                      : <span style={{color:'var(--muted)',fontSize:'.7rem'}}>—</span>}
+                    {submitted.length>0&&(
+                      <div style={{marginTop:8,paddingLeft:4,borderLeft:'2px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
+                        {submitted.map(r=>(
+                          <div key={r.report_id} style={{fontSize:'.75rem',color:'var(--text)',paddingLeft:12}}>
+                            <b>{r.full_name||'User #'+r.user_id}:</b> {r.actions_taken}
+                            {r.remarks&&<span style={{color:'var(--muted)'}}> — {r.remarks}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
+                )})}
                 {incidents.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No incidents found.</div>}
               </div>
             </div>
