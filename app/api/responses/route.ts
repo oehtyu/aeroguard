@@ -15,11 +15,12 @@ export async function GET(req: NextRequest) {
   const device_id = searchParams.get('device_id');
   const user_id = searchParams.get('user_id');
   if (!device_id) return NextResponse.json({ success: false, message: 'device_id is required.' });
+    
+  const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
 
-  const device = await sql`SELECT current_threat FROM devices WHERE device_id=${device_id}`;
   if (device.length === 0) return NextResponse.json({ success: false, message: 'Unknown device.' });
 
-  const limit = limitForLevel(device[0].current_threat);
+    const limit = limitForLevel(device[0].peak_threat || device[0].current_threat);
   const responders = await sql`
     SELECT user_id, full_name FROM incident_responses
     WHERE device_id=${device_id} ORDER BY responded_at ASC
@@ -29,12 +30,13 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     data: {
-      threat_level: device[0].current_threat,
+      threat_level: device[0].peak_threat || device[0].current_threat,
       limit,
       count: responders.length,
       responders,
       alreadyResponded,
       full: responders.length >= limit,
+      location: `${device[0].building}, ${device[0].floor}, ${device[0].room}`,
     },
   });
 }
@@ -47,12 +49,12 @@ export async function POST(req: NextRequest) {
   const { device_id, user_id, full_name } = await req.json();
   if (!device_id || !user_id) return NextResponse.json({ success: false, message: 'device_id and user_id are required.' });
 
-  const device = await sql`SELECT current_threat FROM devices WHERE device_id=${device_id}`;
+    const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
   if (device.length === 0) return NextResponse.json({ success: false, message: 'Unknown device.' });
 
-  const limit = limitForLevel(device[0].current_threat);
+     const limit = limitForLevel(device[0].peak_threat || device[0].current_threat);
   if (limit === 0) return NextResponse.json({ success: false, message: 'This device is not currently in an Orange/Red alert.' });
-
+  
   const inserted = await sql`
     INSERT INTO incident_responses (device_id, user_id, full_name)
     SELECT ${device_id}, ${user_id}, ${full_name || null}

@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
     const device = existing[0];
 
-    await sql`
+        await sql`
       UPDATE devices
       SET pm25_value=COALESCE(${pm25_value}, pm25_value),
           pm10_value=COALESCE(${pm10_value}, pm10_value),
@@ -53,7 +53,14 @@ export async function POST(req: NextRequest) {
           current_threat=${threat_level}, status='Online', last_update=NOW(),
           sensor_read_at=${sensor_read_at || null},
           pi_sent_at=${pi_sent_at || null},
-          server_received_at=${server_received_at}
+          server_received_at=${server_received_at},
+          peak_threat = CASE
+            WHEN ${threat_level}='Gray' THEN NULL
+            WHEN peak_threat IS NULL OR peak_threat='Gray' THEN ${threat_level}
+            WHEN ${threat_level}='Red' THEN 'Red'
+            WHEN ${threat_level}='Orange' AND peak_threat!='Red' THEN 'Orange'
+            ELSE peak_threat
+          END
       WHERE device_id=${device_id}
     `;
     const openIncident = await sql`
@@ -85,10 +92,15 @@ export async function POST(req: NextRequest) {
       // kill un-awaited background work before it finishes. Each call is
       // wrapped so a push/SMS failure never breaks the heartbeat response
       // itself — the Pi still gets a normal 200 back either way.
+            const plainLabel: Record<string, string> = {
+        Yellow: 'Elevated smoke levels detected',
+        Orange: 'Smoke detected — please be alert',
+        Red: 'Fire risk — evacuation may be required',
+      };
       try {
         await sendPushToAll({
           title: `${threat_level} Alert — ${device_id}`,
-          body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
+          body: `${plainLabel[threat_level] || 'Alert'} at ${device.building}, ${device.floor}, ${device.room}.`,
           url: '/dashboard',
         });
       } catch (e: any) {
@@ -97,7 +109,7 @@ export async function POST(req: NextRequest) {
       if (threat_level === 'Red') {
         try {
           await sendSmsToResponders(
-            `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
+            `AeroGuard RED ALERT — Fire risk at ${device.building}, ${device.floor}, ${device.room}. Please respond immediately.`
           );
         } catch (e: any) {
           console.error('[SMS] send failed:', e);

@@ -506,13 +506,17 @@ export default function Dashboard() {
 
   const [respStatus,setRespStatus]=useState<any>(null)
   const [respDismissed,setRespDismissed]=useState<string>('')
+  const [myResponses,setMyResponses]=useState<Set<string>>(new Set())
   const respDeviceRef=useRef<{device_id:string}|null>(null)
 
-  const loadResponses=async()=>{
+    const loadResponses=async()=>{
     const d=respDeviceRef.current
     if(!d){setRespStatus(null);return}
     const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${user?.user_id||''}`)
-    if(res.success)setRespStatus(res.data)
+    if(res.success){
+      setRespStatus(res.data)
+      if(res.data.alreadyResponded)setMyResponses(prev=>new Set(prev).add(d.device_id))
+    }
   }
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
@@ -763,12 +767,14 @@ setModal(null);loadUsers()
     await api('/api/incidents','PUT',{incident_id,response_action})
     loadIncidents(incFilter)
   }
-    async function acceptResponse(){
+      async function acceptResponse(){
     const d=respDeviceRef.current
     if(!d||!user) return
+    setMyResponses(prev=>new Set(prev).add(d.device_id))
     setRespStatus((prev:any)=>prev?{...prev,count:prev.count+1,alreadyResponded:true,responders:[...prev.responders,{user_id:user.user_id,full_name:user.full_name}]}:prev)
     const res=await api('/api/responses','POST',{device_id:d.device_id,user_id:user.user_id,full_name:user.full_name})
-    if(!res.success){
+    if(!res.success && !res.message?.includes('already responded')){
+      setMyResponses(prev=>{const n=new Set(prev);n.delete(d.device_id);return n})
       showToast('error','Unable to Respond',res.message)
       loadResponses()
     }
@@ -968,14 +974,15 @@ setModal(null);loadUsers()
             </div>
           )}
 
-          {respStatus&&!respStatus.alreadyResponded&&!respStatus.full&&respDismissed!==respDeviceRef.current?.device_id&&(
+          {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&respDismissed!==respDeviceRef.current?.device_id&&(
             <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',backdropFilter:'blur(4px)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
               <div style={{background:'var(--panel)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.4)':'rgba(249,115,22,.4)'}`,borderRadius:14,width:420,maxWidth:'92vw',overflow:'hidden'}}>
                 <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)'}}>
                   <div style={{fontSize:'.7rem',fontWeight:700,letterSpacing:1,color:respStatus.threat_level==='Red'?'var(--red)':'var(--orange)',marginBottom:6}}>
                     {respStatus.threat_level==='Red'?'🔴 RED ALERT':'🟠 ORANGE ALERT'} — ACTIVE FIRE
                   </div>
-                  <div style={{fontSize:'1.05rem',fontWeight:700}}>Can you respond or assist?</div>
+                  <div style={{fontSize:'1.05rem',fontWeight:700,marginBottom:4}}>Can you respond or assist?</div>
+                  <div style={{fontSize:'.78rem',color:'var(--muted)'}}>📍 {respStatus.location}</div>
                 </div>
                 <div style={{padding:24}}>
                   <div style={{marginBottom:18}}><ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/></div>
