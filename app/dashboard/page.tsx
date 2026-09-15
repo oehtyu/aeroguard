@@ -284,6 +284,98 @@ const effectiveStatus=(d:any)=>{
 const fmtTime=(ts:string)=>{const d=new Date(ts);return d.toLocaleDateString('en-PH',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(s<60)return`${Math.floor(s)}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;return`${Math.floor(s/3600)}h ago`}
 
+// ── INCIDENT REPORTING ───────────────────────────────────────
+// Regular users see only their own reports here. Each one is created
+// automatically the moment they accept a response request (Incomplete),
+// and becomes read-only the instant they submit it.
+function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[]; user: any; isAdmin: boolean; onSubmitted: () => void }) {
+  const [openReport, setOpenReport] = useState<any>(null)
+  const [actionsTaken, setActionsTaken] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async () => {
+    if (!actionsTaken.trim()) { setErr('Please describe the actions you took.'); return }
+    setSaving(true); setErr('')
+    const res = await fetch('/api/reports', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks }),
+    }).then(r => r.json())
+    setSaving(false)
+    if (!res.success) { setErr(res.message); return }
+    setOpenReport(null); setActionsTaken(''); setRemarks('')
+    onSubmitted()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {reports.length === 0 && (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
+          {isAdmin ? 'No reports submitted yet.' : "You'll see a report here after you accept a response request."}
+        </div>
+      )}
+      {reports.map(r => (
+        <div key={r.report_id} style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '.9rem' }}>{r.location}</div>
+            <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginTop: 2 }}>
+              {r.threat_level} alert · {new Date(r.created_at).toLocaleString()}
+              {isAdmin && r.full_name ? ` · ${r.full_name}` : ''}
+            </div>
+            {r.status === 'Submitted' && (
+              <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
+                <div><b>Actions taken:</b> {r.actions_taken}</div>
+                {r.remarks && <div style={{ marginTop: 4 }}><b>Remarks:</b> {r.remarks}</div>}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: '.72rem', fontWeight: 700, fontFamily: 'var(--mono)',
+                           background: r.status === 'Submitted' ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.15)',
+                           color: r.status === 'Submitted' ? 'var(--green)' : 'var(--yellow)' }}>
+              {r.status.toUpperCase()}
+            </span>
+            {!isAdmin && r.status === 'Incomplete' && (
+              <button onClick={() => { setOpenReport(r); setActionsTaken(''); setRemarks(''); setErr('') }}
+                      style={{ padding: '7px 14px', background: 'var(--accent2)', color: 'white', border: 'none', borderRadius: 6, fontSize: '.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                Complete Report
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {openReport && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, width: 440, maxWidth: '90vw' }}>
+            <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: 4 }}>Incident Report</div>
+            <div style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 16 }}>{openReport.location} — {openReport.threat_level} alert</div>
+
+            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Actions taken *</label>
+            <textarea value={actionsTaken} onChange={e => setActionsTaken(e.target.value)} rows={4}
+                      placeholder="What did you do when you responded?"
+                      style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, padding: 10, color: 'var(--text)', fontSize: '.85rem', fontFamily: 'var(--font)', resize: 'vertical', marginBottom: 12 }} />
+
+            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Remarks (optional)</label>
+            <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
+                      placeholder="Anything else worth noting?"
+                      style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, padding: 10, color: 'var(--text)', fontSize: '.85rem', fontFamily: 'var(--font)', resize: 'vertical', marginBottom: 12 }} />
+
+            {err && <div style={{ color: 'var(--red)', fontSize: '.78rem', marginBottom: 12 }}>{err}</div>}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => setOpenReport(null)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: '.8rem', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={submit} disabled={saving} style={{ padding: '8px 16px', background: 'var(--accent2)', color: 'white', border: 'none', borderRadius: 6, fontSize: '.8rem', fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Submitting...' : 'Submit Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 // ── CAMPUS MAP ────────────────────────────────────────────────
 function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],equipment:any[]}) {
   const [tip,setTip]=useState<any>(null)
@@ -490,6 +582,7 @@ export default function Dashboard() {
   const [incidents,setIncidents]=useState<any[]>([])
   const [users,setUsers]=useState<any[]>([])
   const [equipment,setEquipment]=useState<any[]>([])
+  const [reports,setReports]=useState<any[]>([])
   const [clock,setClock]=useState('')
   const [toast,setToast]=useState<any>(null)
   const [modal,setModal]=useState<string|null>(null)
@@ -518,6 +611,11 @@ export default function Dashboard() {
       if(res.data.alreadyResponded)setMyResponses(prev=>new Set(prev).add(d.device_id))
     }
   }
+    const loadReports=async()=>{
+    if(!user) return
+    const d=await api(`/api/reports?${user.user_type==='Admin'?'all=1':'user_id='+user.user_id}`)
+    if(d.success) setReports(d.data)
+  }
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [exportMenu,setExportMenu]=useState(false)
@@ -532,7 +630,7 @@ export default function Dashboard() {
   const stored=localStorage.getItem(SESSION_KEY)
   if(!stored){router.push('/login');return}
   setUser(JSON.parse(stored))
-  loadDevices();loadIncidents()
+    loadDevices();loadIncidents();loadReports()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
     const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current)},3000)
   const rr=setInterval(loadResponses,2000)
@@ -823,10 +921,11 @@ setModal(null);loadUsers()
   ]:null
 
   const navItems=[
-    {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
+     {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
-    {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
+    {id:'reports',icon:'📝',label:'Incident Reporting',section:''},
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
+    {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
     {id:'devices',icon:'📡',label:'Devices',section:'',admin:true},
     {id:'equipment',icon:'🧯',label:'Fire Equipment',section:'',admin:true},
   ]
@@ -946,7 +1045,7 @@ setModal(null);loadUsers()
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Fire Equipment'}[view]}</div>
+              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Fire Equipment'}[view]}</div>
               <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
             </div>
           </div>
@@ -1006,13 +1105,16 @@ setModal(null);loadUsers()
                     <div style={{fontSize:'2rem',fontWeight:700,fontFamily:'var(--mono)',color:s.color}}>{s.value}</div>
                   </div>
                 ))}
+                
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 380px',gap:16}}>
                 <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    
                     <span style={{fontWeight:600,fontSize:'.875rem'}}>Smoke Detector Status</span>
                     <span style={{fontSize:'.65rem',padding:'2px 8px',borderRadius:20,background:'rgba(0,194,255,.1)',color:'var(--accent)',border:'1px solid rgba(0,194,255,.2)',fontFamily:'var(--mono)'}}>LIVE</span>
                   </div>
+                            
                   <div style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
                     <span>Device</span><span>Location</span><span>Status</span><span>Threat</span><span>PM2.5</span>
                   </div>
@@ -1108,6 +1210,11 @@ setModal(null);loadUsers()
                 </div>
               )}
             </div>
+          )}
+
+                    {/* ══ INCIDENT REPORTING ══ */}
+          {view==='reports'&&(
+            <ReportingPanel reports={reports} user={user} isAdmin={isAdmin} onSubmitted={loadReports}/>
           )}
 
           {/* ══ INCIDENTS ══ */}

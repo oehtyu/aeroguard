@@ -15,12 +15,11 @@ export async function GET(req: NextRequest) {
   const device_id = searchParams.get('device_id');
   const user_id = searchParams.get('user_id');
   if (!device_id) return NextResponse.json({ success: false, message: 'device_id is required.' });
-    
-  const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
 
+  const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
   if (device.length === 0) return NextResponse.json({ success: false, message: 'Unknown device.' });
 
-    const limit = limitForLevel(device[0].peak_threat || device[0].current_threat);
+  const limit = limitForLevel(device[0].peak_threat || device[0].current_threat);
   const responders = await sql`
     SELECT user_id, full_name FROM incident_responses
     WHERE device_id=${device_id} ORDER BY responded_at ASC
@@ -45,16 +44,22 @@ export async function GET(req: NextRequest) {
 // at a device. Atomic: the INSERT only happens if the current count is
 // still under that device's current limit, so two people clicking at the
 // exact same moment can't both slip in over the cap.
+//
+// On a successful accept, this ALSO creates the linked incident_reports
+// row (status 'Incomplete') the user will fill out in the Incident
+// Reporting module — that's what makes the report appear there
+// immediately after accepting, with no separate step needed.
 export async function POST(req: NextRequest) {
   const { device_id, user_id, full_name } = await req.json();
   if (!device_id || !user_id) return NextResponse.json({ success: false, message: 'device_id and user_id are required.' });
 
-    const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
+  const device = await sql`SELECT current_threat, peak_threat, building, floor, room FROM devices WHERE device_id=${device_id}`;
   if (device.length === 0) return NextResponse.json({ success: false, message: 'Unknown device.' });
 
-     const limit = limitForLevel(device[0].peak_threat || device[0].current_threat);
+  const threatLevel = device[0].peak_threat || device[0].current_threat;
+  const limit = limitForLevel(threatLevel);
   if (limit === 0) return NextResponse.json({ success: false, message: 'This device is not currently in an Orange/Red alert.' });
-  
+
   const inserted = await sql`
     INSERT INTO incident_responses (device_id, user_id, full_name)
     SELECT ${device_id}, ${user_id}, ${full_name || null}
@@ -69,6 +74,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Response limit already reached for this alert.', full: true });
     }
     return NextResponse.json({ success: false, message: 'You have already responded to this alert.' });
+  }
+
+  // Best-effort link to whichever incident is currently open for this
+  // device — never blocks the accept itself if something's odd here.
+  try {
+    const openIncident = await sql`
+      SELECT incident_id FROM incidents
+      WHERE device_id=${device_id} AND resolved=FALSE
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    await sql`
+      INSERT INTO incident_reports (device_id, incident_id, user_id, full_name, location, threat_level)
+      VALUES (${device_id}, ${openIncident[0]?.incident_id ?? null}, ${user_id}, ${full_name || null},
+              ${`${device[0].building}, ${device[0].floor}, ${device[0].room}`}, ${threatLevel})
+      ON CONFLICT (device_id, user_id) DO NOTHING
+    `;
+  } catch (e: any) {
+    console.error('[REPORT AUTO-CREATE] Failed:', e);
   }
 
   return NextResponse.json({ success: true, message: 'Response recorded.' });
