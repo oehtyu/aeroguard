@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
+import { createPortal } from 'react-dom'
 
 const SESSION_KEY     = 'ag_user'
 
@@ -285,10 +286,11 @@ const fmtTime=(ts:string)=>{const d=new Date(ts);return d.toLocaleDateString('en
 const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(s<60)return`${Math.floor(s)}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;return`${Math.floor(s/3600)}h ago`}
 
 // ── INCIDENT REPORTING ───────────────────────────────────────
-// Regular users see only their own reports here. Each one is created
-// automatically the moment they accept a response request (Incomplete),
-// and becomes read-only the instant they submit it.
+// Always shows only the CURRENT user's own reports — admin or not.
+// The full cross-user view already exists separately in the admin's
+// Incident Log (View/Export), so this page stays personal for everyone.
 function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[]; user: any; isAdmin: boolean; onSubmitted: () => void }) {
+  const myReports = reports.filter(r => String(r.user_id) === String(user?.user_id))
   const [openReport, setOpenReport] = useState<any>(null)
   const [actionsTaken, setActionsTaken] = useState('')
   const [remarks, setRemarks] = useState('')
@@ -310,18 +312,17 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {reports.length === 0 && (
+      {myReports.length === 0 && (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
-          {isAdmin ? 'No reports submitted yet.' : "You'll see a report here after you accept a response request."}
+          You'll see a report here after you accept a response request.
         </div>
       )}
-      {reports.map(r => (
+      {myReports.map(r => (
         <div key={r.report_id} style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: '.9rem' }}>{r.location}</div>
             <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginTop: 2 }}>
               {r.threat_level} alert · {new Date(r.created_at).toLocaleString()}
-              {isAdmin && r.full_name ? ` · ${r.full_name}` : ''}
             </div>
             {r.status === 'Submitted' && (
               <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
@@ -336,7 +337,7 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
                            color: r.status === 'Submitted' ? 'var(--green)' : 'var(--yellow)' }}>
               {r.status.toUpperCase()}
             </span>
-            {!isAdmin && r.status === 'Incomplete' && (
+            {r.status === 'Incomplete' && (
               <button onClick={() => { setOpenReport(r); setActionsTaken(''); setRemarks(''); setErr('') }}
                       style={{ padding: '7px 14px', background: 'var(--accent2)', color: 'white', border: 'none', borderRadius: 6, fontSize: '.78rem', fontWeight: 600, cursor: 'pointer' }}>
                 Complete Report
@@ -1278,16 +1279,15 @@ setModal(null);loadUsers()
                 {incidents.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No incidents found.</div>}
               </div>
 
-              {viewIncident&&(()=>{
+                            {viewIncident&&createPortal((()=>{
                 const linkedReports=reports.filter(r=>r.incident_id===viewIncident.incident_id)
                 return (
-                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}} className="incident-detail-overlay">
+                <div className="print-portal" style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
                   <style>{`
                     @media print {
-                      body * { visibility: hidden; }
-                      .incident-detail-print, .incident-detail-print * { visibility: visible; }
-                      .incident-detail-print { position: fixed; inset: 0; background: white !important; color: black !important; }
-                      .incident-detail-print * { color: black !important; background: white !important; border-color: #ccc !important; }
+                      body > div:not(.print-portal) { display: none !important; }
+                      .print-portal { position: static !important; background: white !important; display: block !important; }
+                      .incident-detail-print, .incident-detail-print * { color: black !important; background: white !important; border-color: #ccc !important; }
                       .no-print { display: none !important; }
                     }
                   `}</style>
@@ -1331,8 +1331,9 @@ setModal(null);loadUsers()
                       <button onClick={()=>window.print()} style={{padding:'8px 16px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer'}}>Export / Print</button>
                     </div>
                   </div>
+              
                 </div>
-              )})()}
+              )})(), document.body)}
             </div>
           )}
 
