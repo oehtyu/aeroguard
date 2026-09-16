@@ -26,15 +26,27 @@ const LABELS: Record<MapObject['object_type'], string> = {
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }
 function numberValue(value: unknown, fallback: number) { const n = Number(value); return Number.isFinite(n) ? n : fallback }
+    function normaliseObject(object: MapObject): MapObject {
+    return {
+    ...object,
+    map_object_id: Number(object.map_object_id),
+    parent_id: object.parent_id == null ? null : Number(object.parent_id),
+    x: numberValue(object.x, 0),
+    y: numberValue(object.y, 0),
+    width: numberValue(object.width, 140),
+    height: numberValue(object.height, 80),
+  }
+}
 
 type CanvasProps = { objects: MapObject[]; devices?: any[]; incidents?: any[]; selectedId?: number | null; canvasRef?: RefObject<HTMLDivElement>; onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void; onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void; onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void }
 
 export function MapCanvas({ objects, devices = [], incidents = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
   const activeByDevice = new Map(incidents.filter(i => !i.resolved).map(i => [i.device_id, i]))
-  const rooms = objects.filter(o => o.object_type === 'room')
+  const displayObjects = objects.map(normaliseObject)
+const rooms = displayObjects.filter(o => o.object_type === 'room')
   return (
     <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10, touchAction: 'none' }}>
-      {objects.map(object => (
+      {displayObjects.map(object => (
         <div key={object.map_object_id}
           onPointerDown={event => onPointerDown?.(event, object)}
           style={{ position: 'absolute', left: `${object.x / CANVAS_W * 100}%`, top: `${object.y / CANVAS_H * 100}%`, width: `${object.width / CANVAS_W * 100}%`, height: `${object.height / CANVAS_H * 100}%`, background: object.object_type === 'wall' ? object.color : `${object.color}99`, border: `1px solid ${object.color}`, borderRadius: object.object_type === 'wall' ? 1 : 4, zIndex: object.object_type === 'room' ? 3 : 1, cursor: onPointerDown ? 'move' : 'default', userSelect: 'none', boxSizing: 'border-box' }}>
@@ -54,7 +66,7 @@ export function MapCanvas({ objects, devices = [], incidents = [], selectedId, c
 }
 
 export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[] }) {
-  const [objects, setObjects] = useState(initialObjects)
+  const [objects, setObjects] = useState(() => initialObjects.map(normaliseObject))
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newType, setNewType] = useState<MapObject['object_type']>('building')
   const [newName, setNewName] = useState('')
@@ -64,7 +76,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const [presets, setPresets] = useState<{ preset_id: number; name: string; created_at: string }[]>([])
   const [selectedPreset, setSelectedPreset] = useState<number | ''>('')
   const [newPresetName, setNewPresetName] = useState('')
-  const objectsRef = useRef(initialObjects)
+  const objectsRef = useRef(initialObjects.map(normaliseObject))
 
   async function loadPresets() {
     const res = await fetch('/api/map/presets')
@@ -102,7 +114,11 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const canvasRef = useRef<HTMLDivElement>(null)
   const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number; captureEl: HTMLElement } | null>(null)
 
-  useEffect(() => { setObjects(initialObjects); objectsRef.current = initialObjects }, [initialObjects])
+  useEffect(() => {
+  const normalised = initialObjects.map(normaliseObject)
+  setObjects(normalised)
+  objectsRef.current = normalised
+}, [initialObjects])
   const selected = objects.find(o => o.map_object_id === selectedId) || null
   const buildings = objects.filter(o => o.object_type === 'building')
 
@@ -148,12 +164,24 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
       const next = current.map(item => {
         if (item.map_object_id === active.id) {
           return active.resize
-            ? { ...item, width: clamp(active.item.width + dx, 20, CANVAS_W - item.x), height: clamp(active.item.height + dy, 20, CANVAS_H - item.y) }
-            : { ...item, x: clamp(active.item.x + dx, 0, CANVAS_W - item.width), y: clamp(active.item.y + dy, 0, CANVAS_H - item.height) }
+  ? {
+      ...item,
+      width: clamp(numberValue(active.item.width, 140) + dx, 20, CANVAS_W - numberValue(item.x, 0)),
+      height: clamp(numberValue(active.item.height, 80) + dy, 20, CANVAS_H - numberValue(item.y, 0)),
+    }
+  : {
+      ...item,
+      x: clamp(numberValue(active.item.x, 0) + dx, 0, CANVAS_W - numberValue(item.width, 140)),
+      y: clamp(numberValue(active.item.y, 0) + dy, 0, CANVAS_H - numberValue(item.height, 80)),
+    }
         }
         const child = active.children.find(saved => saved.map_object_id === item.map_object_id)
         return child
-          ? { ...item, x: clamp(child.x + dx, 0, CANVAS_W - item.width), y: clamp(child.y + dy, 0, CANVAS_H - item.height) }
+          ? {
+    ...item,
+    x: clamp(numberValue(child.x, 0) + dx, 0, CANVAS_W - numberValue(item.width, 140)),
+    y: clamp(numberValue(child.y, 0) + dy, 0, CANVAS_H - numberValue(item.height, 80)),
+  }
           : item
       })
       objectsRef.current = next
