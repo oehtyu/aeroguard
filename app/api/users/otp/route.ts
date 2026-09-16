@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
               <h2 style="color:#00c2ff;margin:8px 0">AeroGuard</h2>
               <p style="color:#64748b;font-size:13px">BPSU Fire Safety System</p>
             </div>
-            <p>An account has been created for you. Your username is <strong style="color:#00c2ff">${username}</strong>. Click the button below to set your password:</p>
-            <div style="text-align:center;margin:28px 0">
+            <p>An AeroGuard account has been created for you. AeroGuard is BPSU's fire-safety and smoke-alert system. It provides authorized personnel with live alerts, emergency response requests, and incident reporting during possible fire events.</p>
+            <p>Your username is <strong style="color:#00c2ff">${username}</strong>. Click the button below to create your password and activate your account.</p>
               <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/set-password?uid=${user_id}&amp;otp=${otp}&amp;u=${encodeURIComponent(username)}"
                 style="background:linear-gradient(135deg,#0072ff,#00c2ff);color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;font-size:15px">
                 Set My Password

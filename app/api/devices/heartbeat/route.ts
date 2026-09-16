@@ -7,6 +7,11 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const LEVEL_RANK: Record<string, number> = { Gray: 0, Yellow: 1, Orange: 2, Red: 3 };
+const SEVERITY_MESSAGE: Record<string, string> = {
+  Yellow: 'Low-level smoke or vapor detected. Please stay alert.',
+  Orange: 'High smoke level detected. Possible fire — assistance may be needed.',
+  Red: 'Critical smoke level detected. Fire emergency — follow evacuation procedures.',
+}
 
 export async function GET() {
   try {
@@ -87,17 +92,17 @@ export async function POST(req: NextRequest) {
       if (isNewPeak) {
         try {
           await sendPushToAll({
-            title: `${threat_level} Alert — ${device_id}`,
-            body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
-            url: '/dashboard',
-          });
+  title: `AeroGuard ${threat_level.toUpperCase()} ALERT`,
+  body: `Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}.`,
+  url: '/dashboard',
+})
         } catch (e: any) {
           console.error('[PUSH] send failed:', e);
         }
         try {
           await sendSmsToResponders(
-            `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
-          );
+  `AEROGUARD ${threat_level.toUpperCase()} ALERT. Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}. Check AeroGuard now.`
+)
         } catch (e: any) {
           console.error('[SMS] send failed:', e);
         }

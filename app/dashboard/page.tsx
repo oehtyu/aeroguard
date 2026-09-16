@@ -841,7 +841,6 @@ setModal(null);loadUsers()
       floor,
       location_description: desc,
       status: form.status||'Active',
-      last_inspection: form.last_inspection||null,
     }
     const d=await api('/api/equipment', editId?'PUT':'POST', payload)
     if(!d.success){showToast('error','Error',d.message);return}
@@ -943,7 +942,7 @@ function declineResponse() {
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
     {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
     {id:'devices',icon:'📡',label:'Devices',section:'',admin:true},
-    {id:'equipment',icon:'🧯',label:'Fire Equipment',section:'',admin:true},
+    {id:'equipment',icon:'🧯',label:'Extinguishers',section:'',admin:true},
   ]
 
   const chip:Record<string,string>={
@@ -1061,7 +1060,7 @@ function declineResponse() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Fire Equipment'}[view]}</div>
+              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Extinguishers'}[view]}</div>
               <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
             </div>
           </div>
@@ -1400,17 +1399,17 @@ function declineResponse() {
                 }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Device</span><span>Location</span><span>Status</span><span>Threat</span><span>Actions</span>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Device</span><span>Location</span><span>Status</span><span>Actions</span>
                 </div>
                 {devices.filter(d=>!devSearch||d.device_id.toLowerCase().includes(devSearch.toLowerCase())||d.building.toLowerCase().includes(devSearch.toLowerCase())).map(d=>{
-                  const threat=incidents.find(i=>i.device_id===d.device_id)?.threat_level||'Gray'
+            
                   return(
-                    <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
+                    <div key={d.device_id} style={{display:'grid',gridTemplateColumns:'2fr 2fr 1fr 1fr',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
                       <div><div style={{fontWeight:500}}>{d.device_id}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.device_name}</div></div>
                       <div><div>{d.building}</div><div style={{color:'var(--muted)',fontSize:'.75rem'}}>{d.floor} · {d.room}</div></div>
                       <Badge status={effectiveStatus(d)}/>
-                      <ThreatBadge level={threat}/>
+                  
                       <div style={{display:'flex',gap:6}}>
                         <button onClick={()=>{
                           setEditId(d.device_id)
@@ -1440,18 +1439,17 @@ function declineResponse() {
                   setForm({equipment_type:'ABC',building:defaultBuilding,extKey:`${defaultExt.floor}|${defaultExt.desc}`,status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
                   setFormErrors({})
                   setModal('equipment')
-                }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Equipment</button>
+                }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Extinguisher</button>
               </div>
               <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 80px',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Type</span><span>Building</span><span>Location</span><span>Last Inspection</span><span>Status</span><span>Actions</span>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 80px',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Type</span><span>Building</span><span>Location</span><span>Status</span><span>Actions</span>
                 </div>
                 {equipment.map(e=>(
-                  <div key={e.equipment_id} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 1fr 80px',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
+                  <div key={e.equipment_id} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr 1fr 80px',padding:'12px 20px',borderBottom:'1px solid var(--border)',alignItems:'center',fontSize:'.8rem'}}>
                     <div style={{fontWeight:600}}>{e.equipment_type} <span style={{fontSize:'.7rem',color:'var(--muted)',fontWeight:400}}>Extinguisher</span></div>
                     <div>{e.building}</div>
                     <div style={{color:'var(--muted)'}}>{e.floor} · {e.location_description||'—'}</div>
-                    <div style={{fontFamily:'var(--mono)',fontSize:'.75rem',color:'var(--muted)'}}>{e.last_inspection||'—'}</div>
                     <Badge status={e.status}/>
                     <div style={{display:'flex',gap:6}}>
                       <button onClick={()=>{
@@ -1633,7 +1631,7 @@ function declineResponse() {
           {modal==='equipment'&&(
             <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,width:480,maxWidth:'95vw',overflow:'hidden'}}>
               <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:'1rem',fontWeight:600}}>{editId?'Edit Fire Equipment':'Add Fire Equipment'}</div>
+                <div style={{fontSize:'1rem',fontWeight:600}}>{editId?'Edit Fire Extinguisher':'Add Fire Extinguisher'}</div>
                 <button onClick={()=>setModal(null)} style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
               </div>
               <div style={{padding:22}}>
@@ -1684,7 +1682,7 @@ function declineResponse() {
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>
-                <button onClick={saveEquipment} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>{editId?'Update Equipment':'Save Equipment'}</button>
+                <button onClick={saveEquipment} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>{editId?'Update Extinguisher':'Save Extinguisher'}</button>
               </div>
             </div>
           )}
