@@ -607,7 +607,7 @@ export default function Dashboard() {
         const loadResponses=async(uid?:any)=>{
     const d=respDeviceRef.current
     if(!d){setRespStatus(null);return}
-        const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${uid||user?.user_id||''}`)
+    const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${user?.user_id||''}`)
     if(res.success){
       setRespStatus(res.data)
       if(res.data.alreadyResponded)setMyResponses(prev=>new Set(prev).add(d.device_id))
@@ -867,22 +867,36 @@ setModal(null);loadUsers()
     await api('/api/incidents','PUT',{incident_id,response_action})
     loadIncidents(incFilter)
   }
-      async function acceptResponse(){
-    const d=respDeviceRef.current
-    if(!d||!user) return
-    setMyResponses(prev=>new Set(prev).add(d.device_id))
-    setRespStatus((prev:any)=>prev?{...prev,count:prev.count+1,alreadyResponded:true,responders:[...prev.responders,{user_id:user.user_id,full_name:user.full_name}]}:prev)
-    const res=await api('/api/responses','POST',{device_id:d.device_id,user_id:user.user_id,full_name:user.full_name})
-    if(!res.success && !res.message?.includes('already responded')){
-      setMyResponses(prev=>{const n=new Set(prev);n.delete(d.device_id);return n})
-      showToast('error','Unable to Respond',res.message)
-      loadResponses()
-    }
+    async function acceptResponse() {
+  const d = respDeviceRef.current
+  if (!d || !user) return
+
+  const res = await api('/api/responses', 'POST', {
+    device_id: d.device_id,
+    user_id: user.user_id,
+    full_name: user.full_name,
+  })
+
+  if (!res.success) {
+    showToast('error', 'Unable to Respond', res.message || 'Please try again.')
+    await Promise.all([
+      loadResponses(user.user_id),
+      loadReports(user.user_id, isAdmin),
+    ])
+    return
   }
-  function declineResponse(){
-    const d=respDeviceRef.current
-    if(d)setRespDismissed(d.device_id)
-  }
+
+  await Promise.all([
+    loadResponses(user.user_id),
+    loadReports(user.user_id, isAdmin),
+  ])
+  setView('reports')
+  showToast('success', 'Response Accepted', 'Please complete your incident report.')
+}
+function declineResponse() {
+  const d = respDeviceRef.current
+  if (d) setRespDismissed(d.device_id)
+}
   async function resolveIncident(incident_id:number){
     const d=await api('/api/incidents','PUT',{incident_id})
     if(!d.success){showToast('error','Error',d.message||'Failed to resolve incident.');return}
