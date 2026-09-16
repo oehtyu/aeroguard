@@ -1251,10 +1251,12 @@ const currentRoomOptions = mapObjects
             {/* ══ MAP EDITOR ══ */}
            {view==='mapEditor' && isAdmin && (
                 <MapEditor
-                  initialObjects={mapObjects}
-                   adminId={user.user_id}
-                 onChanged={loadMapObjects}
-                 />
+  initialObjects={mapObjects}
+  adminId={user.user_id}
+  devices={devices}
+  incidents={incidents}
+  onChanged={loadMapObjects}
+/>
               )}
                     {/* ══ INCIDENT REPORTING ══ */}
           {view==='reports'&&(

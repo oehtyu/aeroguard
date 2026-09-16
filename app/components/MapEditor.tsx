@@ -27,13 +27,13 @@ const LABELS: Record<MapObject['object_type'], string> = {
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }
 function numberValue(value: unknown, fallback: number) { const n = Number(value); return Number.isFinite(n) ? n : fallback }
 
-type CanvasProps = { objects: MapObject[]; devices?: any[]; incidents?: any[]; selectedId?: number | null; onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void; onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void; onPointerUp?: () => void }
+type CanvasProps = { objects: MapObject[]; devices?: any[]; incidents?: any[]; selectedId?: number | null; onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void; onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void; onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void }
 
 export function MapCanvas({ objects, devices = [], incidents = [], selectedId, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
   const activeByDevice = new Map(incidents.filter(i => !i.resolved).map(i => [i.device_id, i]))
   const rooms = objects.filter(o => o.object_type === 'room')
   return (
-    <div data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10 }}>
+    <div data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10, touchAction: 'none' }}>
       {objects.map(object => (
         <div key={object.map_object_id}
           onPointerDown={event => onPointerDown?.(event, object)}
@@ -53,7 +53,7 @@ export function MapCanvas({ objects, devices = [], incidents = [], selectedId, o
   )
 }
 
-export default function MapEditor({ initialObjects, adminId, onChanged }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void }) {
+export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[] }) {
   const [objects, setObjects] = useState(initialObjects)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newType, setNewType] = useState<MapObject['object_type']>('building')
@@ -61,9 +61,10 @@ export default function MapEditor({ initialObjects, adminId, onChanged }: { init
   const [newFloor, setNewFloor] = useState('1F')
   const [newParent, setNewParent] = useState<number | ''>('')
   const [message, setMessage] = useState('')
-  const interaction = useRef<{ id: number; resize: boolean; x: number; y: number; item: MapObject } | null>(null)
+  const objectsRef = useRef(initialObjects)
+  const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[] } | null>(null)
 
-  useEffect(() => setObjects(initialObjects), [initialObjects])
+  useEffect(() => { setObjects(initialObjects); objectsRef.current = initialObjects }, [initialObjects])
   const selected = objects.find(o => o.map_object_id === selectedId) || null
   const buildings = objects.filter(o => o.object_type === 'building')
 
@@ -74,34 +75,63 @@ export default function MapEditor({ initialObjects, adminId, onChanged }: { init
     return data
   }
 
-  async function save(item: MapObject) {
-    try { await request('PUT', item); setMessage('Saved.'); await onChanged() }
+  async function save(item: MapObject, refresh = true) {
+    try { await request('PUT', item); setMessage('Saved.'); if (refresh) await onChanged() }
     catch (error: any) { setMessage(error.message) }
   }
 
-  function point(event: PointerEvent<HTMLDivElement>) {
-    const rect = (event.currentTarget.closest('[data-map-canvas]') || event.currentTarget).getBoundingClientRect()
-    return { x: (event.clientX - rect.left) * CANVAS_W / rect.width, y: (event.clientY - rect.top) * CANVAS_H / rect.height }
-  }
-
   function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false) {
-    event.stopPropagation(); const p = point(event); setSelectedId(object.map_object_id)
-    interaction.current = { id: object.map_object_id, resize, x: p.x, y: p.y, item: object }
+    event.stopPropagation()
+    const canvas = event.currentTarget.closest('[data-map-canvas]') as HTMLElement | null
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const startX = (event.clientX - rect.left) * CANVAS_W / rect.width
+    const startY = (event.clientY - rect.top) * CANVAS_H / rect.height
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setSelectedId(object.map_object_id)
+    interaction.current = {
+      id: object.map_object_id, resize, startX, startY, item: object,
+      children: object.object_type === 'building'
+        ? objectsRef.current.filter(item => item.parent_id === object.map_object_id)
+        : [],
+    }
   }
 
   function move(event: PointerEvent<HTMLDivElement>) {
     const active = interaction.current; if (!active) return
-    const p = point(event); const dx = p.x - active.x; const dy = p.y - active.y
-    setObjects(current => current.map(item => item.map_object_id !== active.id ? item : active.resize
-      ? { ...item, width: clamp(active.item.width + dx, 20, CANVAS_W - item.x), height: clamp(active.item.height + dy, 20, CANVAS_H - item.y) }
-      : { ...item, x: clamp(active.item.x + dx, 0, CANVAS_W - item.width), y: clamp(active.item.y + dy, 0, CANVAS_H - item.height) }))
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = (event.clientX - rect.left) * CANVAS_W / rect.width
+    const y = (event.clientY - rect.top) * CANVAS_H / rect.height
+    const dx = x - active.startX; const dy = y - active.startY
+    setObjects(current => {
+      const next = current.map(item => {
+        if (item.map_object_id === active.id) {
+          return active.resize
+            ? { ...item, width: clamp(active.item.width + dx, 20, CANVAS_W - item.x), height: clamp(active.item.height + dy, 20, CANVAS_H - item.y) }
+            : { ...item, x: clamp(active.item.x + dx, 0, CANVAS_W - item.width), y: clamp(active.item.y + dy, 0, CANVAS_H - item.height) }
+        }
+        const child = active.children.find(saved => saved.map_object_id === item.map_object_id)
+        return child
+          ? { ...item, x: clamp(child.x + dx, 0, CANVAS_W - item.width), y: clamp(child.y + dy, 0, CANVAS_H - item.height) }
+          : item
+      })
+      objectsRef.current = next
+      return next
+    })
   }
 
-  async function end() {
-    const active = interaction.current; interaction.current = null
+  async function end(event: PointerEvent<HTMLDivElement>) {
+    const active = interaction.current
     if (!active) return
-    const changed = objects.find(o => o.map_object_id === active.id)
-    if (changed) await save(changed)
+    interaction.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const changedIds = [active.id, ...active.children.map(child => child.map_object_id)]
+    const changed = objectsRef.current.filter(item => changedIds.includes(item.map_object_id))
+    try {
+      await Promise.all(changed.map(item => request('PUT', item)))
+      setMessage('Saved.')
+      await onChanged()
+    } catch (error: any) { setMessage(error.message) }
   }
 
   async function addObject() {
@@ -118,10 +148,17 @@ export default function MapEditor({ initialObjects, adminId, onChanged }: { init
     catch (error: any) { setMessage(error.message) }
   }
 
-  function patchSelected(values: Partial<MapObject>) { if (selected) setObjects(current => current.map(o => o.map_object_id === selected.map_object_id ? { ...o, ...values } : o)) }
+  function patchSelected(values: Partial<MapObject>) {
+    if (!selected) return
+    setObjects(current => {
+      const next = current.map(o => o.map_object_id === selected.map_object_id ? { ...o, ...values } : o)
+      objectsRef.current = next
+      return next
+    })
+  }
 
   return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-    <div><MapCanvas objects={objects} selectedId={selectedId} onPointerDown={begin} onPointerMove={move} onPointerUp={end} /></div>
+    <div><MapCanvas objects={objects} devices={devices} incidents={incidents} selectedId={selectedId} onPointerDown={begin} onPointerMove={move} onPointerUp={end} /></div>
     <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <strong>Map Editor</strong><span style={{ color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Select it, then drag the blue corner to resize it.</span>
       <label>New item type<select value={newType} onChange={e => setNewType(e.target.value as MapObject['object_type'])}>{Object.entries(LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
