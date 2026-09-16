@@ -68,7 +68,8 @@ export async function PUT(req: NextRequest) {
     if (!preset.length) return NextResponse.json({ success: false, message: 'Preset not found.' })
 
     const items: any[] = preset[0].data
-    await sql`DELETE FROM map_objects`
+    await sql`DELETE FROM map_objects WHERE object_type='room'`
+await sql`DELETE FROM map_objects`
 
     const newIdByIndex: Record<number, number> = {}
 

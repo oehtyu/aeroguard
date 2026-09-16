@@ -86,12 +86,35 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   useEffect(() => { loadPresets() }, [])
 
   async function savePreset() {
-    if (!newPresetName.trim()) { setMessage('Enter a name for the preset first.'); return }
-    try {
-      await request('POST', { name: newPresetName.trim() })
-      setNewPresetName(''); setMessage('Preset saved.'); await loadPresets()
-    } catch (error: any) { setMessage(error.message) }
+  if (!newPresetName.trim()) {
+    setMessage('Enter a name for the preset first.')
+    return
   }
+
+  try {
+    const response = await fetch('/api/map/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        admin_id: adminId,
+        name: newPresetName.trim(),
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!data.success) {
+      throw new Error(data.message || 'Could not save preset.')
+    }
+
+    setPresets(current => [data.data, ...current])
+    setSelectedPreset(data.data.preset_id)
+    setNewPresetName('')
+    setMessage(`Preset "${data.data.name}" saved.`)
+  } catch (error: any) {
+    setMessage(error.message)
+  }
+}
   async function loadPreset() {
     if (!selectedPreset) return
     if (!confirm('This replaces the ENTIRE current map layout with this preset. Continue?')) return
@@ -115,6 +138,10 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number; captureEl: HTMLElement } | null>(null)
 
   useEffect(() => {
+  // The dashboard refreshes map data in the background.
+  // Do not overwrite the local position while an item is being dragged.
+  if (interaction.current) return
+
   const normalised = initialObjects.map(normaliseObject)
   setObjects(normalised)
   objectsRef.current = normalised
@@ -154,40 +181,108 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   }
 
   function move(event: PointerEvent<HTMLDivElement>) {
-    const active = interaction.current; if (!active) return
-    const canvas = canvasRef.current; if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const x = (event.clientX - rect.left) * CANVAS_W / rect.width
-    const y = (event.clientY - rect.top) * CANVAS_H / rect.height
-    const dx = x - active.startX; const dy = y - active.startY
-    setObjects(current => {
-      const next = current.map(item => {
-        if (item.map_object_id === active.id) {
-          return active.resize
-  ? {
-      ...item,
-      width: clamp(numberValue(active.item.width, 140) + dx, 20, CANVAS_W - numberValue(item.x, 0)),
-      height: clamp(numberValue(active.item.height, 80) + dy, 20, CANVAS_H - numberValue(item.y, 0)),
-    }
-  : {
-      ...item,
-      x: clamp(numberValue(active.item.x, 0) + dx, 0, CANVAS_W - numberValue(item.width, 140)),
-      y: clamp(numberValue(active.item.y, 0) + dy, 0, CANVAS_H - numberValue(item.height, 80)),
-    }
+  const active = interaction.current
+  if (!active) return
+
+  const canvas = canvasRef.current
+  if (!canvas) return
+
+  const rect = canvas.getBoundingClientRect()
+  const x = (event.clientX - rect.left) * CANVAS_W / rect.width
+  const y = (event.clientY - rect.top) * CANVAS_H / rect.height
+  const dx = x - active.startX
+  const dy = y - active.startY
+
+  setObjects(current => {
+    const parent = active.item.object_type === 'room'
+      ? current.find(item => Number(item.map_object_id) === Number(active.item.parent_id))
+      : null
+
+    const movedBuildingX = clamp(
+      Number(active.item.x) + dx,
+      0,
+      CANVAS_W - Number(active.item.width)
+    )
+
+    const movedBuildingY = clamp(
+      Number(active.item.y) + dy,
+      0,
+      CANVAS_H - Number(active.item.height)
+    )
+
+    const next = current.map(item => {
+      if (Number(item.map_object_id) === Number(active.id)) {
+        if (active.resize) {
+          return {
+            ...item,
+            width: clamp(
+              Number(active.item.width) + dx,
+              20,
+              CANVAS_W - Number(item.x)
+            ),
+            height: clamp(
+              Number(active.item.height) + dy,
+              20,
+              CANVAS_H - Number(item.y)
+            ),
+          }
         }
-        const child = active.children.find(saved => saved.map_object_id === item.map_object_id)
-        return child
-          ? {
-    ...item,
-    x: clamp(numberValue(child.x, 0) + dx, 0, CANVAS_W - numberValue(item.width, 140)),
-    y: clamp(numberValue(child.y, 0) + dy, 0, CANVAS_H - numberValue(item.height, 80)),
-  }
-          : item
-      })
-      objectsRef.current = next
-      return next
+
+        // A room may move only within its assigned building.
+        if (parent) {
+          return {
+            ...item,
+            x: clamp(
+              Number(active.item.x) + dx,
+              Number(parent.x),
+              Number(parent.x) + Number(parent.width) - Number(item.width)
+            ),
+            y: clamp(
+              Number(active.item.y) + dy,
+              Number(parent.y),
+              Number(parent.y) + Number(parent.height) - Number(item.height)
+            ),
+          }
+        }
+
+        return {
+          ...item,
+          x: movedBuildingX,
+          y: movedBuildingY,
+        }
+      }
+
+      // When a building moves, its rooms move with it and are forced inside it.
+      const child = active.children.find(
+        saved => Number(saved.map_object_id) === Number(item.map_object_id)
+      )
+
+      if (child) {
+        const relativeX = Number(child.x) - Number(active.item.x)
+        const relativeY = Number(child.y) - Number(active.item.y)
+
+        return {
+          ...item,
+          x: movedBuildingX + clamp(
+            relativeX,
+            0,
+            Number(active.item.width) - Number(item.width)
+          ),
+          y: movedBuildingY + clamp(
+            relativeY,
+            0,
+            Number(active.item.height) - Number(item.height)
+          ),
+        }
+      }
+
+      return item
     })
-  }
+
+    objectsRef.current = next
+    return next
+  })
+}
 
   async function end(event: PointerEvent<HTMLDivElement>) {
     const active = interaction.current
