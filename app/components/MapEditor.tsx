@@ -1,6 +1,6 @@
 'use client'
 
-import { PointerEvent, useEffect, useRef, useState } from 'react'
+import { PointerEvent, RefObject, useEffect, useRef, useState } from 'react'
 
 export type MapObject = {
   map_object_id: number
@@ -27,13 +27,13 @@ const LABELS: Record<MapObject['object_type'], string> = {
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }
 function numberValue(value: unknown, fallback: number) { const n = Number(value); return Number.isFinite(n) ? n : fallback }
 
-type CanvasProps = { objects: MapObject[]; devices?: any[]; incidents?: any[]; selectedId?: number | null; onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void; onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void; onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void }
+type CanvasProps = { objects: MapObject[]; devices?: any[]; incidents?: any[]; selectedId?: number | null; canvasRef?: RefObject<HTMLDivElement>; onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void; onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void; onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void }
 
-export function MapCanvas({ objects, devices = [], incidents = [], selectedId, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
+export function MapCanvas({ objects, devices = [], incidents = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
   const activeByDevice = new Map(incidents.filter(i => !i.resolved).map(i => [i.device_id, i]))
   const rooms = objects.filter(o => o.object_type === 'room')
   return (
-    <div data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10, touchAction: 'none' }}>
+    <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10, touchAction: 'none' }}>
       {objects.map(object => (
         <div key={object.map_object_id}
           onPointerDown={event => onPointerDown?.(event, object)}
@@ -62,7 +62,8 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const [newParent, setNewParent] = useState<number | ''>('')
   const [message, setMessage] = useState('')
   const objectsRef = useRef(initialObjects)
-  const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[] } | null>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number; captureEl: HTMLElement } | null>(null)
 
   useEffect(() => { setObjects(initialObjects); objectsRef.current = initialObjects }, [initialObjects])
   const selected = objects.find(o => o.map_object_id === selectedId) || null
@@ -82,15 +83,17 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
 
   function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false) {
     event.stopPropagation()
-    const canvas = event.currentTarget.closest('[data-map-canvas]') as HTMLElement | null
+    const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const startX = (event.clientX - rect.left) * CANVAS_W / rect.width
     const startY = (event.clientY - rect.top) * CANVAS_H / rect.height
-    event.currentTarget.setPointerCapture(event.pointerId)
+    const captureEl = event.currentTarget as HTMLElement
+    captureEl.setPointerCapture(event.pointerId)
     setSelectedId(object.map_object_id)
     interaction.current = {
       id: object.map_object_id, resize, startX, startY, item: object,
+      pointerId: event.pointerId, captureEl,
       children: object.object_type === 'building'
         ? objectsRef.current.filter(item => item.parent_id === object.map_object_id)
         : [],
@@ -99,7 +102,8 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
 
   function move(event: PointerEvent<HTMLDivElement>) {
     const active = interaction.current; if (!active) return
-    const rect = event.currentTarget.getBoundingClientRect()
+    const canvas = canvasRef.current; if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
     const x = (event.clientX - rect.left) * CANVAS_W / rect.width
     const y = (event.clientY - rect.top) * CANVAS_H / rect.height
     const dx = x - active.startX; const dy = y - active.startY
@@ -124,7 +128,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     const active = interaction.current
     if (!active) return
     interaction.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (active.captureEl.hasPointerCapture(active.pointerId)) active.captureEl.releasePointerCapture(active.pointerId)
     const changedIds = [active.id, ...active.children.map(child => child.map_object_id)]
     const changed = objectsRef.current.filter(item => changedIds.includes(item.map_object_id))
     try {
@@ -158,7 +162,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   }
 
   return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-    <div><MapCanvas objects={objects} devices={devices} incidents={incidents} selectedId={selectedId} onPointerDown={begin} onPointerMove={move} onPointerUp={end} /></div>
+    <div><MapCanvas objects={objects} devices={devices} incidents={incidents} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} /></div>
     <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <strong>Map Editor</strong><span style={{ color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Select it, then drag the blue corner to resize it.</span>
       <label>New item type<select value={newType} onChange={e => setNewType(e.target.value as MapObject['object_type'])}>{Object.entries(LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
