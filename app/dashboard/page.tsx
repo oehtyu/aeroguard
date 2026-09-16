@@ -950,9 +950,9 @@ function declineResponse() {
   const navItems=[
      {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
-    {id:'mapEditor',icon:'✏️',label:'Map Editor',section:'',admin:true},
     {id:'reports',icon:'📝',label:'Incident Reporting',section:''},
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
+    {id:'mapEditor',icon:'✏️',label:'Map Editor',section:'',admin:true},
     {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
     {id:'devices',icon:'📡',label:'Devices',section:'',admin:true},
     {id:'equipment',icon:'🧯',label:'Extinguishers',section:'',admin:true},
