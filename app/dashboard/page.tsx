@@ -583,6 +583,7 @@ export default function Dashboard() {
   const [users,setUsers]=useState<any[]>([])
   const [equipment,setEquipment]=useState<any[]>([])
   const [reports,setReports]=useState<any[]>([])
+  const [viewIncident,setViewIncident]=useState<any>(null)
   const [clock,setClock]=useState('')
   const [toast,setToast]=useState<any>(null)
   const [modal,setModal]=useState<string|null>(null)
@@ -1224,6 +1225,7 @@ setModal(null);loadUsers()
                 <select onChange={e=>{setIncFilter(e.target.value);loadIncidents(e.target.value)}} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.82rem',width:160}}>
                   <option value=''>All Levels</option>
                   {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
+                  
                 </select>
                                 <input type="date" value={incFrom} max={incTo||undefined} onChange={e=>setIncFrom(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
                 <span style={{color:'var(--muted)',fontSize:'.75rem'}}>to</span>
@@ -1246,9 +1248,9 @@ setModal(null);loadUsers()
                   )}
                 </div>
               </div>
-            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
-                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Status</span><span>Reports</span><span>Action</span>
+           <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 1.4fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                  <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Reports</span><span>Action</span>
                 </div>
                 {incidents.filter(i=>{
                   if(incFrom&&new Date(i.created_at)<new Date(incFrom)) return false
@@ -1258,37 +1260,79 @@ setModal(null);loadUsers()
                   const linkedReports=reports.filter(r=>r.incident_id===i.incident_id)
                   const submitted=linkedReports.filter(r=>r.status==='Submitted')
                   return (
-                  <div key={i.incident_id} style={{padding:'10px 20px',borderBottom:'1px solid var(--border)',fontSize:'.78rem'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 0.9fr 1.6fr 1fr',alignItems:'center'}}>
-                      <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
-                      <div>{i.device_id}</div>
-                      <div style={{color:'var(--muted)'}}>{i.location}</div>
-                      <ThreatBadge level={i.threat_level}/>
-                      <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
-                      <Badge status={i.resolved?'Resolved':'Active'}/>
-                      <div style={{color:'var(--muted)',fontSize:'.75rem'}}>
-                        {linkedReports.length===0
-                          ? <span>No responders</span>
-                          : <span>{submitted.length}/{linkedReports.length} report{linkedReports.length!==1?'s':''} submitted</span>}
-                      </div>
-                      {!i.resolved
-                        ? <button onClick={()=>resolveIncident(i.incident_id)} title="Manual override — incidents normally auto-resolve once the sensor reports Gray again" style={{padding:'5px 12px',background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',borderRadius:5,color:'var(--green)',fontSize:'.7rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>Force Resolve</button>
-                        : <span style={{color:'var(--muted)',fontSize:'.7rem'}}>—</span>}
+                  <div key={i.incident_id} style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 1.4fr 1fr',padding:'10px 20px',borderBottom:'1px solid var(--border)',fontSize:'.78rem',alignItems:'center'}}>
+                    <div style={{fontFamily:'var(--mono)',fontSize:'.72rem'}}>{fmtTime(i.created_at)}</div>
+                    <div>{i.device_id}</div>
+                    <div style={{color:'var(--muted)'}}>{i.location}</div>
+                    <ThreatBadge level={i.threat_level}/>
+                    <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
+                    <div style={{color:'var(--muted)',fontSize:'.75rem'}}>
+                      {linkedReports.length===0 ? 'No responders' : `${submitted.length}/${linkedReports.length} submitted`}
                     </div>
-                    {submitted.length>0&&(
-                      <div style={{marginTop:8,paddingLeft:4,borderLeft:'2px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
-                        {submitted.map(r=>(
-                          <div key={r.report_id} style={{fontSize:'.75rem',color:'var(--text)',paddingLeft:12}}>
-                            <b>{r.full_name||'User #'+r.user_id}:</b> {r.actions_taken}
-                            {r.remarks&&<span style={{color:'var(--muted)'}}> — {r.remarks}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <button onClick={()=>setViewIncident(i)}
+                            style={{padding:'5px 12px',background:'rgba(59,130,246,.12)',border:'1px solid rgba(59,130,246,.3)',borderRadius:5,color:'#60a5fa',fontSize:'.7rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
+                      View / Export
+                    </button>
                   </div>
                 )})}
                 {incidents.length===0&&<div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>No incidents found.</div>}
               </div>
+
+              {viewIncident&&(()=>{
+                const linkedReports=reports.filter(r=>r.incident_id===viewIncident.incident_id)
+                return (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}} className="incident-detail-overlay">
+                  <style>{`
+                    @media print {
+                      body * { visibility: hidden; }
+                      .incident-detail-print, .incident-detail-print * { visibility: visible; }
+                      .incident-detail-print { position: fixed; inset: 0; background: white !important; color: black !important; }
+                      .incident-detail-print * { color: black !important; background: white !important; border-color: #ccc !important; }
+                      .no-print { display: none !important; }
+                    }
+                  `}</style>
+                  <div className="incident-detail-print" style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:12,padding:28,width:600,maxWidth:'92vw',maxHeight:'85vh',overflowY:'auto'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:'1.1rem'}}>Incident Report — {viewIncident.device_id}</div>
+                        <div style={{color:'var(--muted)',fontSize:'.82rem',marginTop:2}}>{viewIncident.location}</div>
+                      </div>
+                      <button onClick={()=>setViewIncident(null)} className="no-print" style={{background:'none',border:'none',color:'var(--muted)',fontSize:'1.3rem',cursor:'pointer',lineHeight:1}}>×</button>
+                    </div>
+                    <div style={{display:'flex',gap:16,margin:'12px 0 20px',fontSize:'.8rem'}}>
+                      <div><b>Level:</b> {viewIncident.threat_level}</div>
+                      <div><b>PM2.5:</b> {viewIncident.pm25_value} µg/m³</div>
+                      <div><b>Time:</b> {fmtTime(viewIncident.created_at)}</div>
+                    </div>
+
+                    <div style={{fontWeight:600,fontSize:'.85rem',marginBottom:10,borderTop:'1px solid var(--border)',paddingTop:16}}>
+                      Responder Reports ({linkedReports.length})
+                    </div>
+                    {linkedReports.length===0&&<div style={{color:'var(--muted)',fontSize:'.82rem'}}>No one responded to this alert.</div>}
+                    {linkedReports.map(r=>(
+                      <div key={r.report_id} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--border)'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem'}}>
+                          <b>{r.full_name||'User #'+r.user_id}</b>
+                          <span style={{color:r.status==='Submitted'?'var(--green)':'var(--yellow)',fontSize:'.7rem',fontWeight:700}}>{r.status.toUpperCase()}</span>
+                        </div>
+                        {r.status==='Submitted' ? (
+                          <>
+                            <div style={{fontSize:'.8rem',marginTop:6}}><b>Actions taken:</b> {r.actions_taken}</div>
+                            {r.remarks&&<div style={{fontSize:'.8rem',marginTop:4}}><b>Remarks:</b> {r.remarks}</div>}
+                          </>
+                        ) : (
+                          <div style={{fontSize:'.78rem',color:'var(--muted)',marginTop:4}}>Report not yet submitted.</div>
+                        )}
+                      </div>
+                    ))}
+
+                    <div className="no-print" style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}>
+                      <button onClick={()=>setViewIncident(null)} style={{padding:'8px 16px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--text)',fontSize:'.8rem',cursor:'pointer'}}>Close</button>
+                      <button onClick={()=>window.print()} style={{padding:'8px 16px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer'}}>Export / Print</button>
+                    </div>
+                  </div>
+                </div>
+              )})()}
             </div>
           )}
 
