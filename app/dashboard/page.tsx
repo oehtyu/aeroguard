@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
+import MapEditor, { MapCanvas, MapObject } from '../components/MapEditor'
 
 const SESSION_KEY     = 'ag_user'
 
@@ -583,6 +584,7 @@ export default function Dashboard() {
   const [incidents,setIncidents]=useState<any[]>([])
   const [users,setUsers]=useState<any[]>([])
   const [equipment,setEquipment]=useState<any[]>([])
+  const [mapObjects, setMapObjects] = useState<MapObject[]>([])
   const [reports,setReports]=useState<any[]>([])
   const [viewIncident,setViewIncident]=useState<any>(null)
   const [clock,setClock]=useState('')
@@ -618,6 +620,7 @@ export default function Dashboard() {
     const d=await api(`/api/reports?${adminFlag?'all=1':'user_id='+uid}`)
     if(d.success) setReports(d.data)
   }
+
   const [userSearch,setUserSearch]=useState('')
   const [devSearch,setDevSearch]=useState('')
   const [exportMenu,setExportMenu]=useState(false)
@@ -633,9 +636,9 @@ export default function Dashboard() {
   if(!stored){router.push('/login');return}
   const sessionUser=JSON.parse(stored)
   setUser(sessionUser)
-    loadDevices();loadIncidents();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+    loadDevices();loadIncidents();loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
+    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.
@@ -683,6 +686,10 @@ export default function Dashboard() {
   const loadIncidents=async(level='')=>{const d=await api(`/api/incidents${level?`?level=${level}`:''}`);if(d.success)setIncidents(d.data)}
   const loadUsers=async()=>{const d=await api('/api/users');if(d.success)setUsers(d.data)}
   const loadEquipment=async()=>{const d=await api('/api/equipment');if(d.success)setEquipment(d.data)}
+  const loadMapObjects = async () => {
+  const d = await api('/api/map')
+  if (d.success) setMapObjects(d.data)
+}
 
   function switchView(v:string){
     setView(v)
@@ -690,7 +697,12 @@ export default function Dashboard() {
     if(v==='equipment')loadEquipment()
     if(v==='devices')loadDevices()
     if(v==='incidents')loadIncidents()
-    if(v==='map'){loadDevices();loadIncidents();loadEquipment()}
+    if(v==='map' || v==='mapEditor'){
+  loadDevices()
+  loadIncidents()
+  loadEquipment()
+  loadMapObjects()
+}
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
@@ -938,6 +950,7 @@ function declineResponse() {
   const navItems=[
      {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
+    {id:'mapEditor',icon:'✏️',label:'Map Editor',section:'',admin:true},
     {id:'reports',icon:'📝',label:'Incident Reporting',section:''},
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
     {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
@@ -984,7 +997,15 @@ function declineResponse() {
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
   // Derived room list for current building in device form
-  const currentRoomOptions = ROOMS_BY_BUILDING[form.building] || []
+  const mapBuildings = mapObjects.filter(o => o.object_type === 'building')
+
+const currentRoomOptions = mapObjects
+  .filter(o => o.object_type === 'room' && o.parent_name === form.building)
+  .map(o => ({
+    floor: o.floor || '1F',
+    room: o.name,
+    label: `${o.floor || '1F'} — ${o.name}`,
+  }))
   const currentExtOptions  = EXT_LOCATIONS_BY_BUILDING[form.building] || []
 
   return (
@@ -1060,7 +1081,7 @@ function declineResponse() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Extinguishers'}[view]}</div>
+              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',mapEditor:'Map Editor',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Extinguishers'}[view]}</div>
               <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
             </div>
           </div>
@@ -1209,7 +1230,7 @@ function declineResponse() {
                   </div>
                 )}
               </div>
-              <CampusMap devices={devices} incidents={incidents} equipment={equipment}/>
+              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} />
               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
@@ -1227,6 +1248,14 @@ function declineResponse() {
             </div>
           )}
 
+            {/* ══ MAP EDITOR ══ */}
+           {view==='mapEditor' && isAdmin && (
+                <MapEditor
+                  initialObjects={mapObjects}
+                   adminId={user.user_id}
+                 onChanged={loadMapObjects}
+                 />
+              )}
                     {/* ══ INCIDENT REPORTING ══ */}
           {view==='reports'&&(
            <ReportingPanel reports={reports} user={user} isAdmin={isAdmin} onSubmitted={()=>loadReports(user?.user_id,isAdmin)}/>
@@ -1390,10 +1419,18 @@ function declineResponse() {
                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding='Medina Lacson Building'
-                  const defaultRoom=ROOMS_BY_BUILDING[defaultBuilding][0]
+                  const defaultBuilding = mapBuildings[0]?.name || ''
+const defaultRoom = mapObjects.find(
+  o => o.object_type === 'room' && o.parent_name === defaultBuilding
+)
                   setEditId(null)
-                  setForm({building:defaultBuilding,roomKey:`${defaultRoom.floor}|${defaultRoom.room}`,status:'Online'})
+                  setForm({
+  building: defaultBuilding,
+  roomKey: defaultRoom
+    ? `${defaultRoom.floor || '1F'}|${defaultRoom.name}`
+    : '',
+  status: 'Online',
+})
                   setFormErrors({})
                   setModal('device')
                 }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Device</button>
@@ -1591,12 +1628,22 @@ function declineResponse() {
                   <select value={form.building||'Medina Lacson Building'}
                     onChange={e=>{
                       const b=e.target.value
-                      const firstRoom=ROOMS_BY_BUILDING[b]?.[0]
-                      setForm({...form, building:b, roomKey: firstRoom?`${firstRoom.floor}|${firstRoom.room}`:''})
+                      const firstRoom = mapObjects.find(
+  o => o.object_type === 'room' && o.parent_name === b
+)
+setForm({
+  ...form,
+  building: b,
+  roomKey: firstRoom ? `${firstRoom.floor || '1F'}|${firstRoom.name}` : '',
+})
                       setFormErrors({...formErrors, building:'', roomKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
+                    {mapBuildings.map(b => (
+  <option key={b.map_object_id} value={b.name}>
+    {b.name}
+  </option>
+))}
                   </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
