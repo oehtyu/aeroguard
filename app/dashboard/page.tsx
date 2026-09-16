@@ -600,6 +600,10 @@ export default function Dashboard() {
   const [remarksDraft,setRemarksDraft]=useState<Record<number,string>>({})
     const incFilterRef=useRef(incFilter)
   useEffect(()=>{incFilterRef.current=incFilter},[incFilter])
+  const viewRef = useRef(view)
+useEffect(() => {
+  viewRef.current = view
+}, [view])
 
   const [respStatus,setRespStatus]=useState<any>(null)
   const [respDismissed,setRespDismissed]=useState<string>('')
@@ -638,7 +642,16 @@ export default function Dashboard() {
   setUser(sessionUser)
     loadDevices();loadIncidents();loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
+    const r = setInterval(() => {
+  loadDevices()
+  loadIncidents(incFilterRef.current)
+  loadReports(sessionUser.user_id, sessionUser.user_type === 'Admin')
+
+  // Map Editor controls its own data while the admin is dragging/saving.
+  if (viewRef.current !== 'mapEditor') {
+    loadMapObjects()
+  }
+}, 3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.
