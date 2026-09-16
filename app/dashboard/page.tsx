@@ -638,7 +638,7 @@ export default function Dashboard() {
   setUser(sessionUser)
     loadDevices();loadIncidents();loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
+    const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.

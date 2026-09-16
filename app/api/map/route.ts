@@ -10,7 +10,7 @@ const MAX_Y = 600
 
 async function isAdmin(userId: unknown) {
   if (!userId) return false
-  const rows = await sql`SELECT user_type FROM users WHERE user_id=${String(userId)}`
+  const rows = await sql`SELECT user_type FROM users WHERE user_id=${Number(userId)}`
   return rows[0]?.user_type === 'Admin'
 }
 

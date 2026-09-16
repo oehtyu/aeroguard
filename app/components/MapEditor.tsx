@@ -60,8 +60,45 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const [newName, setNewName] = useState('')
   const [newFloor, setNewFloor] = useState('1F')
   const [newParent, setNewParent] = useState<number | ''>('')
-  const [message, setMessage] = useState('')
+    const [message, setMessage] = useState('')
+  const [presets, setPresets] = useState<{ preset_id: number; name: string; created_at: string }[]>([])
+  const [selectedPreset, setSelectedPreset] = useState<number | ''>('')
+  const [newPresetName, setNewPresetName] = useState('')
   const objectsRef = useRef(initialObjects)
+
+  async function loadPresets() {
+    const res = await fetch('/api/map/presets')
+    const data = await res.json()
+    if (data.success) setPresets(data.data)
+  }
+  useEffect(() => { loadPresets() }, [])
+
+  async function savePreset() {
+    if (!newPresetName.trim()) { setMessage('Enter a name for the preset first.'); return }
+    try {
+      await request('POST', { name: newPresetName.trim() })
+      setNewPresetName(''); setMessage('Preset saved.'); await loadPresets()
+    } catch (error: any) { setMessage(error.message) }
+  }
+  async function loadPreset() {
+    if (!selectedPreset) return
+    if (!confirm('This replaces the ENTIRE current map layout with this preset. Continue?')) return
+    try {
+      const response = await fetch('/api/map/presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, preset_id: selectedPreset }) })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message)
+      setMessage('Preset loaded.'); await onChanged()
+    } catch (error: any) { setMessage(error.message) }
+  }
+  async function deletePreset() {
+    if (!selectedPreset || !confirm('Delete this saved preset? This cannot be undone.')) return
+    try {
+      const response = await fetch('/api/map/presets', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, preset_id: selectedPreset }) })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message)
+      setSelectedPreset(''); setMessage('Preset deleted.'); await loadPresets()
+    } catch (error: any) { setMessage(error.message) }
+  }
   const canvasRef = useRef<HTMLDivElement>(null)
   const interaction = useRef<{ id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number; captureEl: HTMLElement } | null>(null)
 
@@ -164,7 +201,24 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
     <div><MapCanvas objects={objects} devices={devices} incidents={incidents} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} /></div>
     <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <strong>Map Editor</strong><span style={{ color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Select it, then drag the blue corner to resize it.</span>
+            <strong>Map Editor</strong><span style={{ color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Select it, then drag the blue corner to resize it.</span>
+      <hr />
+      <strong style={{ fontSize: '.8rem' }}>Presets</strong>
+      <label>Saved presets
+        <select value={selectedPreset} onChange={e => setSelectedPreset(e.target.value ? Number(e.target.value) : '')}>
+          <option value=''>Select a preset…</option>
+          {presets.map(p => <option key={p.preset_id} value={p.preset_id}>{p.name}</option>)}
+        </select>
+      </label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={loadPreset} disabled={!selectedPreset} style={{ flex: 1 }}>Load selected</button>
+        <button onClick={deletePreset} disabled={!selectedPreset} style={{ color: 'var(--red)' }}>Delete</button>
+      </div>
+      <label>Save current map as…
+        <input value={newPresetName} onChange={e => setNewPresetName(e.target.value)} placeholder="e.g. original-backup" />
+      </label>
+      <button onClick={savePreset}>💾 Save as new preset</button>
+      <hr />
       <label>New item type<select value={newType} onChange={e => setNewType(e.target.value as MapObject['object_type'])}>{Object.entries(LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
       <label>Name<input value={newName} onChange={e => setNewName(e.target.value)} placeholder={LABELS[newType]} /></label>
       {newType === 'room' && <><label>Building<select value={newParent} onChange={e => setNewParent(Number(e.target.value))}>{buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}</select></label><label>Floor<input value={newFloor} onChange={e => setNewFloor(e.target.value)} /></label></>}
