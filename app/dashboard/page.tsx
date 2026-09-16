@@ -604,10 +604,10 @@ export default function Dashboard() {
   const [myResponses,setMyResponses]=useState<Set<string>>(new Set())
   const respDeviceRef=useRef<{device_id:string}|null>(null)
 
-    const loadResponses=async()=>{
+        const loadResponses=async(uid?:any)=>{
     const d=respDeviceRef.current
     if(!d){setRespStatus(null);return}
-    const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${user?.user_id||''}`)
+        const res=await api(`/api/responses?device_id=${d.device_id}&user_id=${uid||user?.user_id||''}`)
     if(res.success){
       setRespStatus(res.data)
       if(res.data.alreadyResponded)setMyResponses(prev=>new Set(prev).add(d.device_id))
@@ -636,8 +636,8 @@ export default function Dashboard() {
     loadDevices();loadIncidents();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
     const r=setInterval(()=>{loadDevices();loadIncidents(incFilterRef.current);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')},3000)
-  const rr=setInterval(loadResponses,2000)
-  const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
+    const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
+    const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
   // so it always reflects the one true active session instead of drifting stale.

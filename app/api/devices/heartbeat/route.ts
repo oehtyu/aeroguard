@@ -6,12 +6,14 @@ import { sendSmsToResponders } from '@/lib/sms';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+const LEVEL_RANK: Record<string, number> = { Gray: 0, Yellow: 1, Orange: 2, Red: 3 };
+
 export async function GET() {
   try {
     const rows = await sql`
       SELECT device_id, device_name, building, floor, room, status,
              pm25_value, pm10_value, temperature, humidity, current_threat, last_update,
-             sensor_read_at, pi_sent_at, server_received_at
+             sensor_read_at, pi_sent_at, server_received_at, peak_threat
       FROM devices ORDER BY device_id ASC
     `;
     return NextResponse.json({ success: true, data: rows });
@@ -21,14 +23,7 @@ export async function GET() {
   }
 }
 
-// Sensor nodes call this every ~5s with live readings. This does NOT
-// create a device — the device must already exist (added via the
-// dashboard's Add Device form). This only updates its live values and
-// opens/updates/resolves an incident row as the threat level changes.
 export async function POST(req: NextRequest) {
-  // Stamp the instant this request is actually being handled — this is
-  // the "server_received_at" anchor the dashboard's latency breakdown
-  // (Pi processing / Network+Vercel / DB→dashboard poll) is measured against.
   const server_received_at = new Date().toISOString();
 
   try {
@@ -38,47 +33,44 @@ export async function POST(req: NextRequest) {
     if (!device_id) return NextResponse.json({ success: false, message: 'Device ID is required.' });
     if (!threat_level) return NextResponse.json({ success: false, message: 'Threat level is required.' });
 
-    const existing = await sql`SELECT device_id, building, floor, room FROM devices WHERE device_id = ${device_id}`;
+    const existing = await sql`SELECT device_id, building, floor, room, peak_threat FROM devices WHERE device_id = ${device_id}`;
     if (existing.length === 0)
       return NextResponse.json({ success: false, message: `Unknown device_id "${device_id}" — add it in the dashboard first.` });
 
     const device = existing[0];
+    const newRank = LEVEL_RANK[threat_level] ?? 0;
+    const prevPeak = device.peak_threat || 'Gray';
+    const prevPeakRank = LEVEL_RANK[prevPeak] ?? 0;
 
-        await sql`
+    // Reset point: back to Gray means the event is fully over — the next
+    // escalation starts a brand new cycle and will notify from Yellow again.
+    const nextPeak = threat_level === 'Gray' ? 'Gray' : (newRank > prevPeakRank ? threat_level : prevPeak);
+    const isNewPeak = threat_level !== 'Gray' && newRank > prevPeakRank;
+
+    await sql`
       UPDATE devices
       SET pm25_value=COALESCE(${pm25_value}, pm25_value),
           pm10_value=COALESCE(${pm10_value}, pm10_value),
           temperature=COALESCE(${temperature}, temperature),
           humidity=COALESCE(${humidity}, humidity),
-          current_threat=${threat_level}, status='Online', last_update=NOW(),
+          current_threat=${threat_level}, peak_threat=${nextPeak}, status='Online', last_update=NOW(),
           sensor_read_at=${sensor_read_at || null},
           pi_sent_at=${pi_sent_at || null},
-          server_received_at=${server_received_at},
-          peak_threat = CASE
-            WHEN ${threat_level}='Gray' THEN NULL
-            WHEN peak_threat IS NULL OR peak_threat='Gray' THEN ${threat_level}
-            WHEN ${threat_level}='Red' THEN 'Red'
-            WHEN ${threat_level}='Orange' AND peak_threat!='Red' THEN 'Orange'
-            ELSE peak_threat
-          END
+          server_received_at=${server_received_at}
       WHERE device_id=${device_id}
     `;
+
     const openIncident = await sql`
       SELECT incident_id, threat_level FROM incidents
       WHERE device_id=${device_id} AND resolved=FALSE
       ORDER BY created_at DESC LIMIT 1
     `;
 
-        if (threat_level === 'Gray') {
-      // Threat cleared — resolve any incident still open for this device,
-      // and clear out its responders since the emergency is genuinely over
+    if (threat_level === 'Gray') {
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
-      await sql`DELETE FROM incident_responses WHERE device_id=${device_id}`;
     } else if (openIncident.length === 0 || openIncident[0].threat_level !== threat_level) {
-      // New threat, or it changed level (e.g. Yellow -> Orange) — close the
-      // old one (if any) and open a fresh incident at the new level
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
@@ -87,36 +79,30 @@ export async function POST(req: NextRequest) {
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
       `;
-      // Awaited (not fire-and-forget) — Vercel can tear down a serverless
-      // invocation right after the response is sent, which can silently
-      // kill un-awaited background work before it finishes. Each call is
-      // wrapped so a push/SMS failure never breaks the heartbeat response
-      // itself — the Pi still gets a normal 200 back either way.
-            const plainLabel: Record<string, string> = {
-        Yellow: 'Elevated smoke levels detected',
-        Orange: 'Smoke detected — please be alert',
-        Red: 'Fire risk — evacuation may be required',
-      };
-      try {
-        await sendPushToAll({
-          title: `${threat_level} Alert — ${device_id}`,
-          body: `${plainLabel[threat_level] || 'Alert'} at ${device.building}, ${device.floor}, ${device.room}.`,
-          url: '/dashboard',
-        });
-      } catch (e: any) {
-        console.error('[PUSH] send failed:', e);
-      }
-      if (threat_level === 'Red') {
+
+      // ONLY notify on a genuine escalation past the peak already reached
+      // this event — never on the way back down (Red->Orange->Yellow),
+      // and never for repeat hits at the same level. Resets automatically
+      // once threat_level returns to Gray (see nextPeak/isNewPeak above).
+      if (isNewPeak) {
+        try {
+          await sendPushToAll({
+            title: `${threat_level} Alert — ${device_id}`,
+            body: `${device.building}, ${device.floor}, ${device.room} — PM2.5: ${pm25_value ?? '—'} µg/m³`,
+            url: '/dashboard',
+          });
+        } catch (e: any) {
+          console.error('[PUSH] send failed:', e);
+        }
         try {
           await sendSmsToResponders(
-            `AeroGuard RED ALERT — Fire risk at ${device.building}, ${device.floor}, ${device.room}. Please respond immediately.`
+            `AeroGuard ${threat_level} ALERT — ${device.building}, ${device.floor}, ${device.room}. PM2.5: ${pm25_value ?? '—'} ug/m3.`
           );
         } catch (e: any) {
           console.error('[SMS] send failed:', e);
         }
       }
     }
-    // else: same non-Gray level as the already-open incident — just keep updating the device row, no new incident
 
     return NextResponse.json({ success: true, message: 'Heartbeat received.', server_received_at });
   } catch (err: any) {
