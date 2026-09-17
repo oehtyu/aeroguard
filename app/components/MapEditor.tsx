@@ -42,8 +42,9 @@ function normaliseObject(object: MapObject): MapObject {
 
 type CanvasProps = {
   objects: MapObject[]
-  devices?: any[]
+   devices?: any[]
   incidents?: any[]
+  equipment?: any[]
   selectedId?: number | null
   canvasRef?: RefObject<HTMLDivElement>
   onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void
@@ -51,7 +52,7 @@ type CanvasProps = {
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
 }
 
-export function MapCanvas({ objects, devices = [], incidents = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
+export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
   const display = objects.map(normaliseObject)
   const activeByDevice = new Map(incidents.filter(incident => !incident.resolved).map(incident => [incident.device_id, incident]))
   const ordered = [...display].sort((a, b) => (a.object_type === 'room' ? 1 : 0) - (b.object_type === 'room' ? 1 : 0))
@@ -80,15 +81,64 @@ export function MapCanvas({ objects, devices = [], incidents = [], selectedId, c
         const color = incident?.threat_level === 'Red' ? '#ef4444' : incident?.threat_level === 'Orange' ? '#f97316' : '#00c2ff'
         return <div key={device.device_id} title={`${device.device_id} — ${device.device_name || 'Smoke detector'}`} style={{ position: 'absolute', left: `${(room.x + room.width / 2) / CANVAS_W * 100}%`, top: `${(room.y + room.height / 2) / CANVAS_H * 100}%`, transform: 'translate(-50%, -50%)', width: 24, height: 24, borderRadius: '50%', background: color, border: '2px solid white', zIndex: 5, display: 'grid', placeItems: 'center', fontSize: 12, pointerEvents: 'none', boxShadow: `0 0 0 3px ${color}33` }}>📡</div>
       })}
+       {equipment.map((item, index) => {
+        const building = display.find(object =>
+          object.object_type === 'building' && object.name === item.building
+        )
+        if (!building) return null
+
+        // Equipment is assigned to a building, not a room. Spread markers
+        // around that building's upper-right corner so they never overlap.
+        const buildingItems = equipment.filter(e => e.building === item.building)
+        const positionInBuilding = buildingItems.findIndex(e =>
+          String(e.equipment_id) === String(item.equipment_id)
+        )
+        const column = positionInBuilding % 3
+        const row = Math.floor(positionInBuilding / 3)
+        const markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
+        const markerY = clamp(building.y + 18 + row * 28, building.y + 12, building.y + building.height - 12)
+        const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
+
+        return (
+          <div
+            key={`extinguisher-${item.equipment_id || index}`}
+            title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}`}
+            style={{
+              position: 'absolute',
+              left: `${markerX / CANVAS_W * 100}%`,
+              top: `${markerY / CANVAS_H * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: 23,
+              height: 23,
+              borderRadius: 5,
+              background: statusColor,
+              border: '2px solid white',
+              zIndex: 6,
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 13,
+              pointerEvents: 'none',
+              boxShadow: `0 0 0 3px ${statusColor}33`,
+            }}
+          >
+            🧯
+          </div>
+        )
+      })}
     </div>
   )
 }
 
+
 type Interaction = { id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number }
 
-export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[] }) {
+
+
+export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [], equipment = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[]; equipment?: any[] }) {
   // Important: this is deliberately a local editor copy. It must NOT be reset
   // by Dashboard's live refresh while the user is dragging.
+
+  
   const [objects, setObjects] = useState<MapObject[]>(() => initialObjects.map(normaliseObject))
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newType, setNewType] = useState<MapObject['object_type']>('building')
@@ -96,9 +146,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const [newFloor, setNewFloor] = useState('1F')
   const [newParent, setNewParent] = useState<number | ''>('')
   const [message, setMessage] = useState('')
-  const [presets, setPresets] = useState<{ preset_id: number; name: string; created_at: string }[]>([])
-  const [selectedPreset, setSelectedPreset] = useState<number | ''>('')
-  const [newPresetName, setNewPresetName] = useState('')
+
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const objectsRef = useRef<MapObject[]>(initialObjects.map(normaliseObject))
@@ -133,60 +181,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     if (!data.success) throw new Error(data.message || 'Could not reload the map.')
     replaceObjects((data.data as MapObject[]).map(normaliseObject))
   }
-  async function loadPresets() {
-    try {
-      const response = await fetch('/api/map/presets', { cache: 'no-store' })
-      const data = await response.json()
-      if (!data.success) throw new Error(data.message || 'Could not load presets.')
-      setPresets(data.data)
-    } catch (error: any) { setMessage(error.message) }
-  }
-  useEffect(() => { void loadPresets() }, [])
 
-  // Only accept the initial asynchronous load once. Do not add a normal
-  // [initialObjects] syncing effect: that is the source of drag jitter.
-  useEffect(() => {
-    if (hasHydrated.current || initialObjects.length === 0) return
-    const loaded = initialObjects.map(normaliseObject)
-    hasHydrated.current = true
-    replaceObjects(loaded)
-  }, [initialObjects])
-
-  async function savePreset() {
-    if (!newPresetName.trim()) { setMessage('Enter a name for the preset first.'); return }
-    try {
-      const data: any = await enqueue(async () => {
-        const response = await fetch('/api/map/presets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, name: newPresetName.trim() }) })
-        const result = await response.json()
-        if (!result.success) throw new Error(result.message || 'Could not save preset.')
-        return result
-      })
-      setPresets(current => [data.data, ...current])
-      setSelectedPreset(Number(data.data.preset_id)); setNewPresetName('')
-      setMessage(`Preset "${data.data.name}" saved.`)
-    } catch (error: any) { setMessage(error.message) }
-  }
-  async function loadPreset() {
-    if (!selectedPreset || !confirm('This replaces the current map layout with this preset. Continue?')) return
-    try {
-      await enqueue(async () => {
-        const response = await fetch('/api/map/presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, preset_id: selectedPreset }) })
-        const data = await response.json()
-        if (!data.success) throw new Error(data.message || 'Could not load preset.')
-        await reloadEditorObjects()
-      })
-      setSelectedId(null); setMessage('Preset loaded.'); void onChanged()
-    } catch (error: any) { setMessage(error.message) }
-  }
-  async function deletePreset() {
-    if (!selectedPreset || !confirm('Delete this saved preset? This cannot be undone.')) return
-    try {
-      const response = await fetch('/api/map/presets', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, preset_id: selectedPreset }) })
-      const data = await response.json()
-      if (!data.success) throw new Error(data.message || 'Could not delete preset.')
-      setSelectedPreset(''); await loadPresets(); setMessage('Preset deleted.')
-    } catch (error: any) { setMessage(error.message) }
-  }
 
   function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false) {
     event.preventDefault(); event.stopPropagation()
@@ -259,39 +254,45 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     replaceObjects(current => current.map(item => item.map_object_id === selected.map_object_id ? { ...item, ...change } : item))
   }
   async function saveSelected() {
-    const current = objectsRef.current.find(item => item.map_object_id === selectedId)
-    if (!current) return
-    try { await request('PUT', current); setMessage('Saved.'); void onChanged() } catch (error: any) { setMessage(error.message) }
+  const current = objectsRef.current.find(item => item.map_object_id === selectedId)
+  if (!current) return
+
+  try {
+    await enqueue(() => request('PUT', current))
+    await onChanged()
+    setMessage('Saved.')
+  } catch (error: any) {
+    setMessage(error.message)
   }
+}
+
   async function removeSelected() {
     if (!selected || !confirm(`Delete ${selected.name}?`)) return
     try { await request('DELETE', { map_object_id: selected.map_object_id }); replaceObjects(current => current.filter(item => item.map_object_id !== selected.map_object_id)); setSelectedId(null); setMessage('Deleted.'); void onChanged() } catch (error: any) { setMessage(error.message) }
   }
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-      <MapCanvas objects={objects} devices={devices} incidents={incidents} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} />
-      <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-        <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
-        <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner.</p>
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}><b style={{ fontSize: '.85rem' }}>Presets</b>
-          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 10 }}>Saved presets</label>
-          <select value={selectedPreset} onChange={e => setSelectedPreset(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}><option value="">Select a preset...</option>{presets.map(p => <option key={p.preset_id} value={p.preset_id}>{p.name}</option>)}</select>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button onClick={loadPreset} disabled={!selectedPreset} style={{ flex: 1, padding: 9 }}>Load selected</button><button onClick={deletePreset} disabled={!selectedPreset} style={{ color: 'var(--red)', padding: '9px 12px' }}>Delete</button></div>
-          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 12 }}>Save current map as...</label>
-          <input value={newPresetName} onChange={e => setNewPresetName(e.target.value)} placeholder="e.g. original-map" style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
-          <button onClick={savePreset} style={{ width: '100%', marginTop: 8, padding: 10 }}>💾 Save as new preset</button>
-        </div>
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
-          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)' }}>New item type</label>
-          <select value={newType} onChange={e => setNewType(e.target.value as MapObject['object_type'])} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          {newType === 'room' && <><label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Building</label><select value={newParent} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>{buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}</select><label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Floor</label><input value={newFloor} onChange={e => setNewFloor(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} /></>}
-          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Name</label><input value={newName} onChange={e => setNewName(e.target.value)} placeholder={LABELS[newType]} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
-          <button onClick={addObject} style={{ width: '100%', marginTop: 10, padding: 10 }}>+ Add to map</button>
-        </div>
-        {selected && <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}><b style={{ fontSize: '.85rem' }}>Selected: {selected.name}</b><label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Name</label><input value={selected.name} onChange={e => updateSelected({ name: e.target.value })} onBlur={saveSelected} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} /><label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Colour</label><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{COLORS.map(color => <button key={color} aria-label={color} onClick={() => { updateSelected({ color }); setTimeout(saveSelected, 0) }} style={{ width: 22, height: 22, padding: 0, background: color, border: selected.color === color ? '2px solid white' : '1px solid transparent', borderRadius: 3 }} />)}</div><button onClick={removeSelected} style={{ width: '100%', marginTop: 12, padding: 9, color: 'var(--red)' }}>Delete selected</button></div>}
-        {message && <div style={{ color: message.includes('Saved') || message.includes('loaded') ? 'var(--accent)' : 'var(--red)', fontSize: '.75rem', marginTop: 12 }}>{message}</div>}
-      </aside>
-    </div>
-  )
+  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
+  <b style={{ fontSize: '.85rem' }}>Map contents</b>
+  <p style={{ margin: '6px 0 10px', color: 'var(--muted)', fontSize: '.72rem' }}>
+    Saved blocks on this map. Select one to rename, recolour, resize, or delete it.
+  </p>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
+    {objects.map(object => (
+      <button
+        key={object.map_object_id}
+        onClick={() => setSelectedId(object.map_object_id)}
+        style={{
+          width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6,
+          border: object.map_object_id === selectedId ? '1px solid var(--accent)' : '1px solid var(--border)',
+          background: object.map_object_id === selectedId ? 'rgba(0,194,255,.10)' : 'var(--panel2)',
+          color: 'var(--text)', cursor: 'pointer', fontSize: '.76rem',
+        }}
+      >
+        <span style={{ color: object.color, marginRight: 7 }}>●</span>
+        {LABELS[object.object_type]} — {object.name}
+      </button>
+    ))}
+  </div>
+</div>
+
 }

@@ -585,6 +585,8 @@ export default function Dashboard() {
   const [users,setUsers]=useState<any[]>([])
   const [equipment,setEquipment]=useState<any[]>([])
   const [mapObjects, setMapObjects] = useState<MapObject[]>([])
+  const mapRequestRef = useRef(0)
+
   const [reports,setReports]=useState<any[]>([])
   const [viewIncident,setViewIncident]=useState<any>(null)
   const [clock,setClock]=useState('')
@@ -700,8 +702,12 @@ useEffect(() => {
   const loadUsers=async()=>{const d=await api('/api/users');if(d.success)setUsers(d.data)}
   const loadEquipment=async()=>{const d=await api('/api/equipment');if(d.success)setEquipment(d.data)}
   const loadMapObjects = async () => {
+  const requestId = ++mapRequestRef.current
   const d = await api('/api/map')
-  if (d.success) setMapObjects(d.data)
+  // A slower, older request must never overwrite a newer rename/move.
+  if (d.success && requestId === mapRequestRef.current) {
+    setMapObjects(d.data)
+  }
 }
 
   function switchView(v:string){
@@ -1013,7 +1019,10 @@ function declineResponse() {
   const mapBuildings = mapObjects.filter(o => o.object_type === 'building')
 
 const currentRoomOptions = mapObjects
-  .filter(o => o.object_type === 'room' && o.parent_name === form.building)
+  .filter(o => o.object_type === 'room' &&
+o.parent_name === form.building &&
+o.name.trim().toLowerCase() !== 'room' &&
+o.name.trim() !== '')
   .map(o => ({
     floor: o.floor || '1F',
     room: o.name,
@@ -1262,12 +1271,14 @@ const currentRoomOptions = mapObjects
           )}
 
             {/* ══ MAP EDITOR ══ */}
-           {view==='mapEditor' && isAdmin && (
-                <MapEditor
+           {view==='mapEditor' && isAdmin && ( 
+            
+      <MapEditor
   initialObjects={mapObjects}
   adminId={user.user_id}
   devices={devices}
   incidents={incidents}
+  equipment={equipment}
   onChanged={loadMapObjects}
 />
               )}
@@ -1436,7 +1447,10 @@ const currentRoomOptions = mapObjects
                 <button onClick={()=>{
                   const defaultBuilding = mapBuildings[0]?.name || ''
 const defaultRoom = mapObjects.find(
-  o => o.object_type === 'room' && o.parent_name === defaultBuilding
+  o => o.object_type === 'room' &&
+o.parent_name === form.building &&
+o.name.trim().toLowerCase() !== 'room' &&
+o.name.trim() !== ''
 )
                   setEditId(null)
                   setForm({
@@ -1644,7 +1658,10 @@ const defaultRoom = mapObjects.find(
                     onChange={e=>{
                       const b=e.target.value
                       const firstRoom = mapObjects.find(
-  o => o.object_type === 'room' && o.parent_name === b
+  o => o.object_type === 'room' &&
+o.parent_name === form.building &&
+o.name.trim().toLowerCase() !== 'room' &&
+o.name.trim() !== ''
 )
 setForm({
   ...form,
