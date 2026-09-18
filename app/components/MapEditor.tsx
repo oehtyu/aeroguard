@@ -133,12 +133,9 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
 type Interaction = { id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number }
 
 
-
 export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [], equipment = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[]; equipment?: any[] }) {
   // Important: this is deliberately a local editor copy. It must NOT be reset
   // by Dashboard's live refresh while the user is dragging.
-
-  
   const [objects, setObjects] = useState<MapObject[]>(() => initialObjects.map(normaliseObject))
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newType, setNewType] = useState<MapObject['object_type']>('building')
@@ -147,11 +144,9 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const [newParent, setNewParent] = useState<number | ''>('')
   const [message, setMessage] = useState('')
 
-
   const canvasRef = useRef<HTMLDivElement>(null)
   const objectsRef = useRef<MapObject[]>(initialObjects.map(normaliseObject))
   const interaction = useRef<Interaction | null>(null)
-  const hasHydrated = useRef(initialObjects.length > 0)
   const writeQueue = useRef<Promise<unknown>>(Promise.resolve())
 
   const replaceObjects = (updater: MapObject[] | ((current: MapObject[]) => MapObject[])) => {
@@ -175,13 +170,6 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     writeQueue.current = next.catch(() => undefined)
     return next
   }
-  async function reloadEditorObjects() {
-    const response = await fetch('/api/map', { cache: 'no-store' })
-    const data = await response.json()
-    if (!data.success) throw new Error(data.message || 'Could not reload the map.')
-    replaceObjects((data.data as MapObject[]).map(normaliseObject))
-  }
-
 
   function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false) {
     event.preventDefault(); event.stopPropagation()
@@ -254,45 +242,85 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     replaceObjects(current => current.map(item => item.map_object_id === selected.map_object_id ? { ...item, ...change } : item))
   }
   async function saveSelected() {
-  const current = objectsRef.current.find(item => item.map_object_id === selectedId)
-  if (!current) return
-
-  try {
-    await enqueue(() => request('PUT', current))
-    await onChanged()
-    setMessage('Saved.')
-  } catch (error: any) {
-    setMessage(error.message)
+    const current = objectsRef.current.find(item => item.map_object_id === selectedId)
+    if (!current) return
+    try {
+      await enqueue(() => request('PUT', current))
+      await onChanged()
+      setMessage('Saved.')
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
-}
-
   async function removeSelected() {
     if (!selected || !confirm(`Delete ${selected.name}?`)) return
     try { await request('DELETE', { map_object_id: selected.map_object_id }); replaceObjects(current => current.filter(item => item.map_object_id !== selected.map_object_id)); setSelectedId(null); setMessage('Deleted.'); void onChanged() } catch (error: any) { setMessage(error.message) }
   }
 
-  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
-  <b style={{ fontSize: '.85rem' }}>Map contents</b>
-  <p style={{ margin: '6px 0 10px', color: 'var(--muted)', fontSize: '.72rem' }}>
-    Saved blocks on this map. Select one to rename, recolour, resize, or delete it.
-  </p>
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
-    {objects.map(object => (
-      <button
-        key={object.map_object_id}
-        onClick={() => setSelectedId(object.map_object_id)}
-        style={{
-          width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6,
-          border: object.map_object_id === selectedId ? '1px solid var(--accent)' : '1px solid var(--border)',
-          background: object.map_object_id === selectedId ? 'rgba(0,194,255,.10)' : 'var(--panel2)',
-          color: 'var(--text)', cursor: 'pointer', fontSize: '.76rem',
-        }}
-      >
-        <span style={{ color: object.color, marginRight: 7 }}>●</span>
-        {LABELS[object.object_type]} — {object.name}
-      </button>
-    ))}
-  </div>
-</div>
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
+      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} />
+      <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
+        <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
+        <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner.</p>
 
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)' }}>New item type</label>
+          <select value={newType} onChange={e => setNewType(e.target.value as MapObject['object_type'])} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
+            {Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          {newType === 'room' && <>
+            <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Building</label>
+            <select value={newParent} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
+              {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}
+            </select>
+            <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Floor</label>
+            <input value={newFloor} onChange={e => setNewFloor(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
+          </>}
+          <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Name</label>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder={LABELS[newType]} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
+          <button onClick={addObject} style={{ width: '100%', marginTop: 10, padding: 10 }}>+ Add to map</button>
+        </div>
+
+        {selected && (
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
+            <b style={{ fontSize: '.85rem' }}>Selected: {selected.name}</b>
+            <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Name</label>
+            <input value={selected.name} onChange={e => updateSelected({ name: e.target.value })} onBlur={saveSelected} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
+            <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Colour</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              {COLORS.map(color => <button key={color} aria-label={color} onClick={() => { updateSelected({ color }); setTimeout(saveSelected, 0) }} style={{ width: 22, height: 22, padding: 0, background: color, border: selected.color === color ? '2px solid white' : '1px solid transparent', borderRadius: 3 }} />)}
+            </div>
+            <button onClick={removeSelected} style={{ width: '100%', marginTop: 12, padding: 9, color: 'var(--red)' }}>Delete selected</button>
+          </div>
+        )}
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
+          <b style={{ fontSize: '.85rem' }}>Map contents</b>
+          <p style={{ margin: '6px 0 10px', color: 'var(--muted)', fontSize: '.72rem' }}>
+            Saved blocks on this map. Select one to rename, recolour, resize, or delete it.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
+            {objects.map(object => (
+              <button
+                key={object.map_object_id}
+                onClick={() => setSelectedId(object.map_object_id)}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6,
+                  border: object.map_object_id === selectedId ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  background: object.map_object_id === selectedId ? 'rgba(0,194,255,.10)' : 'var(--panel2)',
+                  color: 'var(--text)', cursor: 'pointer', fontSize: '.76rem',
+                }}
+              >
+                <span style={{ color: object.color, marginRight: 7 }}>●</span>
+                {LABELS[object.object_type]} — {object.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {message && <div style={{ color: message.includes('Saved') ? 'var(--accent)' : 'var(--red)', fontSize: '.75rem', marginTop: 12 }}>{message}</div>}
+      </aside>
+    </div>
+  )
 }
