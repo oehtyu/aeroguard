@@ -14,6 +14,8 @@ export type MapObject = {
   parent_id: number | null
   parent_name?: string | null
   floor?: string | null
+  pin_x?: number | null
+  pin_y?: number | null
 }
 
 const CANVAS_W = 1140
@@ -42,6 +44,12 @@ function normaliseObject(object: MapObject): MapObject {
 
 function centerOf(o: MapObject) { return { cx: o.x + o.width / 2, cy: o.y + o.height / 2 } }
 
+// The flag/route target for a safe_zone: its own draggable pin if one has
+// been placed, otherwise the zone's geometric center as a sane default.
+function pinOf(o: MapObject) {
+  return { cx: o.pin_x ?? (o.x + o.width / 2), cy: o.pin_y ?? (o.y + o.height / 2) }
+}
+
 // Finds the closest "safe_zone" (Assembly Area) block to a given building,
 // by straight-line distance between their centers. This replaces the old
 // hand-authored per-building gate assignment — as the admin reshapes the
@@ -54,7 +62,7 @@ export function findNearestSafeZone(building: MapObject | undefined | null, allO
   let best: MapObject | null = null
   let bestDist = Infinity
   for (const zone of safeZones) {
-    const z = centerOf(zone)
+    const z = pinOf(zone)
     const dist = Math.hypot(z.cx - b.cx, z.cy - b.cy)
     if (dist < bestDist) { bestDist = dist; best = zone }
   }
@@ -68,7 +76,7 @@ type CanvasProps = {
   equipment?: any[]
   selectedId?: number | null
   canvasRef?: RefObject<HTMLDivElement>
-  onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void
+    onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean, pin?: boolean) => void
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
   // true only inside the admin Map Editor. Controls two things: Assembly
@@ -91,13 +99,42 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
   // Live evacuation route(s): for every device currently in an Orange/Red
   // incident, find its building, find the nearest Assembly Area, and draw
   // a line between them. Fully dynamic — no hardcoded gates or routes.
+    function countBuildingHits(points: { cx: number; cy: number }[], excludeId: number) {
+    let hits = 0
+    for (let i = 0; i < points.length - 1; i++) {
+      const [x1, y1] = [points[i].cx, points[i].cy]
+      const [x2, y2] = [points[i + 1].cx, points[i + 1].cy]
+      const segMinX = Math.min(x1, x2), segMaxX = Math.max(x1, x2)
+      const segMinY = Math.min(y1, y2), segMaxY = Math.max(y1, y2)
+      for (const b of display) {
+        if (b.object_type !== 'building' || b.map_object_id === excludeId) continue
+        const overlapX = segMaxX > b.x && segMinX < b.x + b.width
+        const overlapY = segMaxY > b.y && segMinY < b.y + b.height
+        if (overlapX && overlapY) hits++
+      }
+    }
+    return hits
+  }
+  // Two-segment "L" route instead of one diagonal line — bends at whichever
+  // corner crosses fewer other buildings, so it reads more like a real path
+  // through campus than a line cutting straight through walls.
+  function bentRoute(from: { cx: number; cy: number }, to: { cx: number; cy: number }, excludeId: number) {
+    const viaA = { cx: to.cx, cy: from.cy }   // horizontal first, then vertical
+    const viaB = { cx: from.cx, cy: to.cy }   // vertical first, then horizontal
+    const hitsA = countBuildingHits([from, viaA, to], excludeId)
+    const hitsB = countBuildingHits([from, viaB, to], excludeId)
+    const via = hitsA <= hitsB ? viaA : viaB
+    return [from, via, to]
+  }
+
   const activeRoutes = devices.flatMap(device => {
     const incident = activeByDevice.get(device.device_id) as any
     if (!incident || (incident.threat_level !== 'Orange' && incident.threat_level !== 'Red')) return []
     const building = display.find(o => o.object_type === 'building' && o.name === device.building)
     const safeZone = findNearestSafeZone(building, display)
     if (!building || !safeZone) return []
-    return [{ device_id: device.device_id, threat_level: incident.threat_level, from: centerOf(building), to: centerOf(safeZone), safeZoneName: safeZone.name }]
+    const points = bentRoute(centerOf(building), pinOf(safeZone), building.map_object_id)
+    return [{ device_id: device.device_id, threat_level: incident.threat_level, points, safeZoneName: safeZone.name }]
   })
 
   return (
@@ -127,8 +164,8 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
             </div>
           )
         })}
-        {safeZonesForPins.map(zone => {
-          const c = centerOf(zone)
+                {safeZonesForPins.map(zone => {
+          const c = pinOf(zone)
           return (
             <div key={`pin-${zone.map_object_id}`} title={`Assembly Area: ${zone.name}`} style={{ position: 'absolute', left: c.cx, top: c.cy, transform: 'translate(-50%, -100%)', zIndex: 5, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ fontSize: 22, filter: 'drop-shadow(0 0 3px rgba(0,0,0,.6))' }}>🚩</div>
@@ -136,6 +173,17 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
             </div>
           )
         })}
+        {isEditor && ordered.filter(o => o.object_type === 'safe_zone' && o.map_object_id === selectedId).map(zone => {
+          const c = pinOf(zone)
+          return (
+            <div key={`editor-pin-${zone.map_object_id}`} onPointerDown={event => onPointerDown?.(event, zone, false, true)}
+              title="Drag to reposition the flag"
+              style={{ position: 'absolute', left: c.cx, top: c.cy, transform: 'translate(-50%, -100%)', zIndex: 8, cursor: 'grab', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ fontSize: 26, filter: 'drop-shadow(0 0 4px rgba(0,194,255,.9))' }}>🚩</div>
+            </div>
+          )
+        })}
+
         {devices.map(device => {
           const room = display.find(object => object.object_type === 'room' && object.parent_name === device.building && object.name === device.room && (!device.floor || !object.floor || object.floor === device.floor))
           if (!room) return null
@@ -187,12 +235,14 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
             </div>
           )
         })}
-        {activeRoutes.map(route => {
+                {activeRoutes.map(route => {
           const color = route.threat_level === 'Red' ? '#ef4444' : '#f97316'
+          const pointsAttr = route.points.map((p: any) => `${p.cx},${p.cy}`).join(' ')
+          const last = route.points[route.points.length - 1]
           return (
             <svg key={`route-${route.device_id}`} style={{ position: 'absolute', inset: 0, width: CANVAS_W, height: CANVAS_H, pointerEvents: 'none', zIndex: 4 }}>
-              <line x1={route.from.cx} y1={route.from.cy} x2={route.to.cx} y2={route.to.cy} stroke={color} strokeWidth={4} strokeDasharray="10 6" opacity={0.9} />
-              <circle cx={route.to.cx} cy={route.to.cy} r={10} fill={color} opacity={0.9} />
+              <polyline points={pointsAttr} fill="none" stroke={color} strokeWidth={4} strokeDasharray="10 6" opacity={0.9} strokeLinejoin="round" />
+              <circle cx={last.cx} cy={last.cy} r={10} fill={color} opacity={0.9} />
             </svg>
           )
         })}
@@ -201,7 +251,16 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
   )
 }
 
-type Interaction = { id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number }
+type Interaction = {
+  id: number
+  resize: boolean
+  pin?: boolean
+  startX: number
+  startY: number
+  item: MapObject
+  pointerId: number
+  children: MapObject[]
+}
 
 
 export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [], equipment = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[]; equipment?: any[] }) {
@@ -242,13 +301,13 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     return next
   }
 
-  function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false) {
+    function begin(event: PointerEvent<HTMLDivElement>, object: MapObject, resize = false, pin = false) {
     event.preventDefault(); event.stopPropagation()
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     canvas.setPointerCapture(event.pointerId)
-    interaction.current = { id: object.map_object_id, resize, startX: (event.clientX - rect.left) * CANVAS_W / rect.width, startY: (event.clientY - rect.top) * CANVAS_H / rect.height, item: normaliseObject(object), pointerId: event.pointerId, children: object.object_type === 'building' ? objectsRef.current.filter(item => item.parent_id === object.map_object_id).map(normaliseObject) : [] }
+    interaction.current = { id: object.map_object_id, resize, pin, startX: (event.clientX - rect.left) * CANVAS_W / rect.width, startY: (event.clientY - rect.top) * CANVAS_H / rect.height, item: normaliseObject(object), pointerId: event.pointerId, children: object.object_type === 'building' ? objectsRef.current.filter(item => item.parent_id === object.map_object_id).map(normaliseObject) : [] }
     setSelectedId(object.map_object_id)
   }
   function move(event: PointerEvent<HTMLDivElement>) {
@@ -258,12 +317,17 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     const rect = canvas.getBoundingClientRect()
     const dx = (event.clientX - rect.left) * CANVAS_W / rect.width - active.startX
     const dy = (event.clientY - rect.top) * CANVAS_H / rect.height - active.startY
-    replaceObjects(current => {
+        replaceObjects(current => {
       const parent = active.item.object_type === 'room' ? current.find(item => item.map_object_id === active.item.parent_id) : null
       const x = clamp(active.item.x + dx, 0, CANVAS_W - active.item.width)
       const y = clamp(active.item.y + dy, 0, CANVAS_H - active.item.height)
       return current.map(item => {
         if (item.map_object_id === active.id) {
+          if (active.pin) {
+            const basePinX = active.item.pin_x ?? (active.item.x + active.item.width / 2)
+            const basePinY = active.item.pin_y ?? (active.item.y + active.item.height / 2)
+            return { ...item, pin_x: clamp(basePinX + dx, 0, CANVAS_W), pin_y: clamp(basePinY + dy, 0, CANVAS_H) }
+          }
           if (active.resize) {
             const minWidth = active.item.object_type === 'building' ? Math.max(20, ...active.children.map(child => child.x + child.width - active.item.x)) : 20
             const minHeight = active.item.object_type === 'building' ? Math.max(20, ...active.children.map(child => child.y + child.height - active.item.y)) : 20
