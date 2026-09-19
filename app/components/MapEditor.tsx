@@ -63,7 +63,7 @@ export function findNearestSafeZone(building: MapObject | undefined | null, allO
 
 type CanvasProps = {
   objects: MapObject[]
-   devices?: any[]
+  devices?: any[]
   incidents?: any[]
   equipment?: any[]
   selectedId?: number | null
@@ -71,12 +71,22 @@ type CanvasProps = {
   onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean) => void
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
+  // true only inside the admin Map Editor. Controls two things: Assembly
+  // Area blocks render faint/see-through (so the admin can see what's
+  // underneath while positioning a large zone) instead of the compact pin
+  // shown to everyone else, and pointer handlers are wired up at all.
+  isEditor?: boolean
 }
 
-export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp }: CanvasProps) {
+export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp, isEditor = false }: CanvasProps) {
   const display = objects.map(normaliseObject)
   const activeByDevice = new Map(incidents.filter(incident => !incident.resolved).map(incident => [incident.device_id, incident]))
-  const ordered = [...display].sort((a, b) => (a.object_type === 'room' ? 1 : 0) - (b.object_type === 'room' ? 1 : 0))
+  // Assembly Areas render as a compact pin outside the editor, so they
+  // don't crowd the map for everyone who isn't repositioning them.
+  const ordered = [...display]
+    .filter(object => isEditor || object.object_type !== 'safe_zone')
+    .sort((a, b) => (a.object_type === 'room' ? 1 : 0) - (b.object_type === 'room' ? 1 : 0))
+  const safeZonesForPins = isEditor ? [] : display.filter(object => object.object_type === 'safe_zone')
 
   // Live evacuation route(s): for every device currently in an Orange/Red
   // incident, find its building, find the nearest Assembly Area, and draw
@@ -91,82 +101,102 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
   })
 
   return (
-    <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-      style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: 'relative', overflow: 'hidden', background: '#0d1421', border: '1px solid var(--border)', borderRadius: 10, touchAction: 'none', userSelect: 'none' }}>
-      {ordered.map(object => {
-        const isRoom = object.object_type === 'room'
-        const selected = object.map_object_id === selectedId
-        return (
-          <div key={object.map_object_id} onPointerDown={event => onPointerDown?.(event, object)}
-            style={{ position: 'absolute', left: `${object.x / CANVAS_W * 100}%`, top: `${object.y / CANVAS_H * 100}%`, width: `${object.width / CANVAS_W * 100}%`, height: `${object.height / CANVAS_H * 100}%`,
-              boxSizing: 'border-box', background: object.object_type === 'wall' ? object.color : isRoom ? '#334155' : `${object.color}99`, border: `${selected ? 2 : 1}px solid ${selected ? '#00c2ff' : object.color}`,
-              borderRadius: object.object_type === 'wall' ? 1 : 4, zIndex: isRoom ? 3 : 1, cursor: onPointerDown ? 'grab' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isRoom ? 11 : 13, fontWeight: 700, overflow: 'visible' }}>
-            <span style={{ pointerEvents: 'none', textAlign: 'center', padding: 3 }}>{object.name}</span>
-            {selected && onPointerDown && <div onPointerDown={event => { event.stopPropagation(); onPointerDown(event, object, true) }}
-              style={{ position: 'absolute', width: 11, height: 11, right: -6, bottom: -6, background: '#00c2ff', border: '2px solid #fff', borderRadius: 2, cursor: 'nwse-resize' }} />}
-          </div>
-        )
-      })}
-      {devices.map(device => {
-        const room = display.find(object => object.object_type === 'room' && object.parent_name === device.building && object.name === device.room && (!device.floor || !object.floor || object.floor === device.floor))
-        if (!room) return null
-        const incident = activeByDevice.get(device.device_id) as any
-        const color = incident?.threat_level === 'Red' ? '#ef4444' : incident?.threat_level === 'Orange' ? '#f97316' : '#00c2ff'
-        return <div key={device.device_id} title={`${device.device_id} — ${device.device_name || 'Smoke detector'}`} style={{ position: 'absolute', left: `${(room.x + room.width / 2) / CANVAS_W * 100}%`, top: `${(room.y + room.height / 2) / CANVAS_H * 100}%`, transform: 'translate(-50%, -50%)', width: 24, height: 24, borderRadius: '50%', background: color, border: '2px solid white', zIndex: 5, display: 'grid', placeItems: 'center', fontSize: 12, pointerEvents: 'none', boxShadow: `0 0 0 3px ${color}33` }}>📡</div>
-      })}
-       {equipment.map((item, index) => {
-        const building = display.find(object =>
-          object.object_type === 'building' && object.name === item.building
-        )
-        if (!building) return null
+    // Outer wrapper is the actual scrollable/pannable viewport — this is
+    // what fixes mobile: instead of shrinking the whole map to fit a
+    // narrow screen (making text illegible), the map stays at a fixed,
+    // always-readable size and the wrapper scrolls/pans to reach the rest.
+    <div style={{ width: '100%', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--border)', borderRadius: 10, background: '#0d1421' }}>
+      <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', background: '#0d1421', touchAction: 'none', userSelect: 'none' }}>
+        {ordered.map(object => {
+          const isRoom = object.object_type === 'room'
+          const isSafeZone = object.object_type === 'safe_zone'
+          const selected = object.map_object_id === selectedId
+          return (
+            <div key={object.map_object_id} onPointerDown={event => isEditor && onPointerDown?.(event, object)}
+              style={{ position: 'absolute', left: object.x, top: object.y, width: object.width, height: object.height,
+                boxSizing: 'border-box',
+                background: object.object_type === 'wall' ? object.color : isRoom ? '#334155' : isSafeZone ? `${object.color}26` : `${object.color}99`,
+                border: `${selected ? 2 : 1}px solid ${selected ? '#00c2ff' : object.color}`,
+                borderStyle: isSafeZone ? 'dashed' : 'solid',
+                borderRadius: object.object_type === 'wall' ? 1 : 4, zIndex: isRoom ? 3 : isSafeZone ? 0 : 1,
+                cursor: isEditor && onPointerDown ? 'grab' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isRoom ? 11 : 13, fontWeight: 700, overflow: 'visible' }}>
+              <span style={{ pointerEvents: 'none', textAlign: 'center', padding: 3 }}>{object.name}</span>
+              {selected && isEditor && onPointerDown && <div onPointerDown={event => { event.stopPropagation(); onPointerDown(event, object, true) }}
+                style={{ position: 'absolute', width: 11, height: 11, right: -6, bottom: -6, background: '#00c2ff', border: '2px solid #fff', borderRadius: 2, cursor: 'nwse-resize' }} />}
+            </div>
+          )
+        })}
+        {safeZonesForPins.map(zone => {
+          const c = centerOf(zone)
+          return (
+            <div key={`pin-${zone.map_object_id}`} title={`Assembly Area: ${zone.name}`} style={{ position: 'absolute', left: c.cx, top: c.cy, transform: 'translate(-50%, -100%)', zIndex: 5, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ fontSize: 22, filter: 'drop-shadow(0 0 3px rgba(0,0,0,.6))' }}>🚩</div>
+              <div style={{ background: 'rgba(13,20,33,.85)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap', marginTop: -2 }}>{zone.name}</div>
+            </div>
+          )
+        })}
+        {devices.map(device => {
+          const room = display.find(object => object.object_type === 'room' && object.parent_name === device.building && object.name === device.room && (!device.floor || !object.floor || object.floor === device.floor))
+          if (!room) return null
+          const incident = activeByDevice.get(device.device_id) as any
+          const color = incident?.threat_level === 'Red' ? '#ef4444' : incident?.threat_level === 'Orange' ? '#f97316' : '#00c2ff'
+          return <div key={device.device_id} title={`${device.device_id} — ${device.device_name || 'Smoke detector'}`} style={{ position: 'absolute', left: room.x + room.width / 2, top: room.y + room.height / 2, transform: 'translate(-50%, -50%)', width: 24, height: 24, borderRadius: '50%', background: color, border: '2px solid white', zIndex: 5, display: 'grid', placeItems: 'center', fontSize: 12, pointerEvents: 'none', boxShadow: `0 0 0 3px ${color}33` }}>📡</div>
+        })}
+        {equipment.map((item, index) => {
+          const building = display.find(object =>
+            object.object_type === 'building' && object.name === item.building
+          )
+          if (!building) return null
 
-        // Equipment is assigned to a building, not a room. Spread markers
-        // around that building's upper-right corner so they never overlap.
-        const buildingItems = equipment.filter(e => e.building === item.building)
-        const positionInBuilding = buildingItems.findIndex(e =>
-          String(e.equipment_id) === String(item.equipment_id)
-        )
-        const column = positionInBuilding % 3
-        const row = Math.floor(positionInBuilding / 3)
-        const markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
-        const markerY = clamp(building.y + 18 + row * 28, building.y + 12, building.y + building.height - 12)
-        const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
+          // Equipment is assigned to a building, not a room. Spread markers
+          // around that building's upper-right corner so they never overlap.
+          const buildingItems = equipment.filter(e => e.building === item.building)
+          const positionInBuilding = buildingItems.findIndex(e =>
+            String(e.equipment_id) === String(item.equipment_id)
+          )
+          const column = positionInBuilding % 3
+          const row = Math.floor(positionInBuilding / 3)
+          const markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
+          const markerY = clamp(building.y + 18 + row * 28, building.y + 12, building.y + building.height - 12)
+          const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
 
-        return (
-          <div
-            key={`extinguisher-${item.equipment_id || index}`}
-            title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}`}
-            style={{
-              position: 'absolute',
-              left: `${markerX / CANVAS_W * 100}%`,
-              top: `${markerY / CANVAS_H * 100}%`,
-              transform: 'translate(-50%, -50%)',
-              width: 23,
-              height: 23,
-              borderRadius: 5,
-              background: statusColor,
-              border: '2px solid white',
-              zIndex: 6,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 13,
-              pointerEvents: 'none',
-              boxShadow: `0 0 0 3px ${statusColor}33`,
-            }}
-          >
-                        🧯
-          </div>
-        )
-      })}
-      {activeRoutes.map(route => {
-        const color = route.threat_level === 'Red' ? '#ef4444' : '#f97316'
-        return (
-          <svg key={`route-${route.device_id}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 4 }} viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}>
-            <line x1={route.from.cx} y1={route.from.cy} x2={route.to.cx} y2={route.to.cy} stroke={color} strokeWidth={4} strokeDasharray="10 6" opacity={0.9} />
-            <circle cx={route.to.cx} cy={route.to.cy} r={10} fill={color} opacity={0.9} />
-          </svg>
-        )
-      })}
+          return (
+            <div
+              key={`extinguisher-${item.equipment_id || index}`}
+              title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}`}
+              style={{
+                position: 'absolute',
+                left: markerX,
+                top: markerY,
+                transform: 'translate(-50%, -50%)',
+                width: 23,
+                height: 23,
+                borderRadius: 5,
+                background: statusColor,
+                border: '2px solid white',
+                zIndex: 6,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                pointerEvents: 'none',
+                boxShadow: `0 0 0 3px ${statusColor}33`,
+              }}
+            >
+                          🧯
+            </div>
+          )
+        })}
+        {activeRoutes.map(route => {
+          const color = route.threat_level === 'Red' ? '#ef4444' : '#f97316'
+          return (
+            <svg key={`route-${route.device_id}`} style={{ position: 'absolute', inset: 0, width: CANVAS_W, height: CANVAS_H, pointerEvents: 'none', zIndex: 4 }}>
+              <line x1={route.from.cx} y1={route.from.cy} x2={route.to.cx} y2={route.to.cy} stroke={color} strokeWidth={4} strokeDasharray="10 6" opacity={0.9} />
+              <circle cx={route.to.cx} cy={route.to.cy} r={10} fill={color} opacity={0.9} />
+            </svg>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -300,7 +330,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} />
+      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor />
       <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
         <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
         <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner.</p>
