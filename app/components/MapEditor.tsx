@@ -106,8 +106,8 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
     // narrow screen (making text illegible), the map stays at a fixed,
     // always-readable size and the wrapper scrolls/pans to reach the rest.
     <div style={{ width: '100%', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--border)', borderRadius: 10, background: '#0d1421' }}>
-      <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', background: '#0d1421', touchAction: 'none', userSelect: 'none' }}>
+           <div ref={canvasRef} data-map-canvas onPointerMove={isEditor ? onPointerMove : undefined} onPointerUp={isEditor ? onPointerUp : undefined} onPointerCancel={isEditor ? onPointerUp : undefined}
+        style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', background: '#0d1421', touchAction: isEditor ? 'none' : 'auto', userSelect: 'none' }}>
         {ordered.map(object => {
           const isRoom = object.object_type === 'room'
           const isSafeZone = object.object_type === 'safe_zone'

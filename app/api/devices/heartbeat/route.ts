@@ -13,6 +13,27 @@ const SEVERITY_MESSAGE: Record<string, string> = {
   Red: 'Critical smoke level detected. Fire emergency — follow evacuation procedures.',
 }
 
+async function notifyEscalation(device: any, threat_level: string) {
+  try {
+    await sendPushToAll({
+      title: `AeroGuard ${threat_level.toUpperCase()} ALERT`,
+      body: `Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}.`,
+      url: '/dashboard',
+    });
+  } catch (e: any) {
+    console.error('[PUSH] send failed:', e);
+  }
+  if (threat_level === 'Red') {
+    try {
+      await sendSmsToResponders(
+        `AEROGUARD ${threat_level.toUpperCase()} ALERT. Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}. Check AeroGuard now.`
+      );
+    } catch (e: any) {
+      console.error('[SMS] send failed:', e);
+    }
+  }
+}
+
 export async function GET() {
   try {
     const rows = await sql`
@@ -71,43 +92,36 @@ export async function POST(req: NextRequest) {
       ORDER BY created_at DESC LIMIT 1
     `;
 
-    if (threat_level === 'Gray') {
+        if (threat_level === 'Gray') {
+      // Full reset point — the session is genuinely over. Next time it
+      // leaves Gray, a brand new incident row starts and notifies fresh.
       if (openIncident.length > 0) {
         await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
       }
-    } else if (openIncident.length === 0 || openIncident[0].threat_level !== threat_level) {
-      if (openIncident.length > 0) {
-        await sql`UPDATE incidents SET resolved=TRUE, resolved_at=NOW() WHERE incident_id=${openIncident[0].incident_id}`;
-      }
+      await sql`DELETE FROM incident_responses WHERE device_id=${device_id}`;
+    } else if (openIncident.length === 0) {
+      // Brand new session (was Gray, now isn't) — one new row, always notify.
       await sql`
         INSERT INTO incidents (device_id, threat_level, pm25_value, pm10_value, temperature, humidity, location)
         VALUES (${device_id}, ${threat_level}, ${pm25_value}, ${pm10_value}, ${temperature}, ${humidity},
                 ${`${device.building}, ${device.floor}, ${device.room}`})
       `;
-
-      // ONLY notify on a genuine escalation past the peak already reached
-      // this event — never on the way back down (Red->Orange->Yellow),
-      // and never for repeat hits at the same level. Resets automatically
-      // once threat_level returns to Gray (see nextPeak/isNewPeak above).
-      if (isNewPeak) {
-        try {
-          await sendPushToAll({
-  title: `AeroGuard ${threat_level.toUpperCase()} ALERT`,
-  body: `Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}.`,
-  url: '/dashboard',
-})
-        } catch (e: any) {
-          console.error('[PUSH] send failed:', e);
-        }
-        try {
-          await sendSmsToResponders(
-  `AEROGUARD ${threat_level.toUpperCase()} ALERT. Severity: ${threat_level}. ${SEVERITY_MESSAGE[threat_level]} Location: ${device.building}, ${device.floor}, ${device.room}. Check AeroGuard now.`
-)
-        } catch (e: any) {
-          console.error('[SMS] send failed:', e);
-        }
-      }
+      await notifyEscalation(device, threat_level);
+    } else if (isNewPeak) {
+      // Escalating further within the SAME session — update the existing
+      // row in place (never a new row), and notify since this is genuinely
+      // more severe than anything seen so far this session.
+      await sql`
+        UPDATE incidents
+        SET threat_level=${threat_level}, pm25_value=${pm25_value}, pm10_value=${pm10_value},
+            temperature=${temperature}, humidity=${humidity}
+        WHERE incident_id=${openIncident[0].incident_id}
+      `;
+      await notifyEscalation(device, threat_level);
     }
+    // else: same or lower severity than the peak already reached this
+    // session — no new row, no update, no notification. This is the fix
+    // for "Red -> Orange -> Yellow keeps re-notifying/re-logging."
 
     return NextResponse.json({ success: true, message: 'Heartbeat received.', server_received_at });
   } catch (err: any) {

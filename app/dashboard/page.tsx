@@ -608,7 +608,7 @@ useEffect(() => {
 }, [view])
 
   const [respStatus,setRespStatus]=useState<any>(null)
-  const [respDismissed,setRespDismissed]=useState<string>('')
+    const [respDismissedFor,setRespDismissedFor]=useState<Record<string,number>>({})
   const [myResponses,setMyResponses]=useState<Set<string>>(new Set())
   const respDeviceRef=useRef<{device_id:string}|null>(null)
 
@@ -925,7 +925,7 @@ setModal(null);loadUsers()
 }
 function declineResponse() {
   const d = respDeviceRef.current
-  if (d) setRespDismissed(d.device_id)
+  if (d && respStatus) setRespDismissedFor(prev=>({...prev,[d.device_id]:respStatus.limit}))
 }
   async function resolveIncident(incident_id:number){
     const d=await api('/api/incidents','PUT',{incident_id})
@@ -950,15 +950,23 @@ function declineResponse() {
   const redInc=incidents.find(i=>i.threat_level==='Red'&&!i.resolved)
   const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
     const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
-  useEffect(()=>{
+    useEffect(()=>{
     const newRef=activeEvacDevice?{device_id:activeEvacDevice.device_id}:null
+    const prevDeviceId=respDeviceRef.current?.device_id
     const changed=JSON.stringify(newRef)!==JSON.stringify(respDeviceRef.current)
     respDeviceRef.current=newRef
     if(changed){
-      if(!newRef){setRespStatus(null);setRespDismissed('')}
+      if(!newRef){
+        setRespStatus(null)
+        if(prevDeviceId){
+          setMyResponses(prev=>{const n=new Set(prev);n.delete(prevDeviceId);return n})
+          setRespDismissedFor(prev=>{const n={...prev};delete n[prevDeviceId];return n})
+        }
+      }
       else loadResponses()
     }
   },[activeEvacDevice?.device_id])
+
     const activeBuildingObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='building'&&o.name===activeEvacDevice.building)
   const activeSafeZone=findNearestSafeZone(activeBuildingObj,mapObjects)
   const activeSteps=activeSafeZone&&activeEvacDevice?[
@@ -1132,7 +1140,7 @@ o.name.trim() !== '')
             </div>
           )}
 
-          {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&respDismissed!==respDeviceRef.current?.device_id&&(
+                    {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&(respDismissedFor[respDeviceRef.current?.device_id||'']===undefined||respDismissedFor[respDeviceRef.current?.device_id||'']<respStatus.limit)&&(
             <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',backdropFilter:'blur(4px)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
               <div style={{background:'var(--panel)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.4)':'rgba(249,115,22,.4)'}`,borderRadius:14,width:420,maxWidth:'92vw',overflow:'hidden'}}>
                 <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)'}}>
