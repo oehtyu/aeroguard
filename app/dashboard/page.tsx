@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import MapEditor, { MapCanvas, MapObject } from '../components/MapEditor'
+import MapEditor, { MapCanvas, MapObject, findNearestSafeZone } from '../components/MapEditor'
 
 const SESSION_KEY     = 'ag_user'
 
@@ -959,11 +959,12 @@ function declineResponse() {
       else loadResponses()
     }
   },[activeEvacDevice?.device_id])
-  const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
-  const activeRoute=activeRouteId?EVAC_ROUTES.find(r=>r.id===activeRouteId):null
-  const activeSteps=activeRoute&&activeEvacDevice?[
-    ...(activeEvacDevice.floor!==GROUND_FLOOR[activeEvacDevice.building]?[`Proceed to the nearest stairwell and descend to ${GROUND_FLOOR[activeEvacDevice.building]}.`]:[]),
-    ...activeRoute.steps,
+    const activeBuildingObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='building'&&o.name===activeEvacDevice.building)
+  const activeSafeZone=findNearestSafeZone(activeBuildingObj,mapObjects)
+  const activeSteps=activeSafeZone&&activeEvacDevice?[
+    'Proceed to the nearest exit.',
+    `Head to the ${activeSafeZone.name} assembly area.`,
+    'Wait for further instructions from Security/DRRM personnel.',
   ]:null
 
   const navItems=[

@@ -40,6 +40,27 @@ function normaliseObject(object: MapObject): MapObject {
   }
 }
 
+function centerOf(o: MapObject) { return { cx: o.x + o.width / 2, cy: o.y + o.height / 2 } }
+
+// Finds the closest "safe_zone" (Assembly Area) block to a given building,
+// by straight-line distance between their centers. This replaces the old
+// hand-authored per-building gate assignment — as the admin reshapes the
+// map or adds new assembly areas, routing adjusts automatically.
+export function findNearestSafeZone(building: MapObject | undefined | null, allObjects: MapObject[]): MapObject | null {
+  if (!building) return null
+  const safeZones = allObjects.filter(o => o.object_type === 'safe_zone')
+  if (safeZones.length === 0) return null
+  const b = centerOf(building)
+  let best: MapObject | null = null
+  let bestDist = Infinity
+  for (const zone of safeZones) {
+    const z = centerOf(zone)
+    const dist = Math.hypot(z.cx - b.cx, z.cy - b.cy)
+    if (dist < bestDist) { bestDist = dist; best = zone }
+  }
+  return best
+}
+
 type CanvasProps = {
   objects: MapObject[]
    devices?: any[]
@@ -56,6 +77,18 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
   const display = objects.map(normaliseObject)
   const activeByDevice = new Map(incidents.filter(incident => !incident.resolved).map(incident => [incident.device_id, incident]))
   const ordered = [...display].sort((a, b) => (a.object_type === 'room' ? 1 : 0) - (b.object_type === 'room' ? 1 : 0))
+
+  // Live evacuation route(s): for every device currently in an Orange/Red
+  // incident, find its building, find the nearest Assembly Area, and draw
+  // a line between them. Fully dynamic — no hardcoded gates or routes.
+  const activeRoutes = devices.flatMap(device => {
+    const incident = activeByDevice.get(device.device_id) as any
+    if (!incident || (incident.threat_level !== 'Orange' && incident.threat_level !== 'Red')) return []
+    const building = display.find(o => o.object_type === 'building' && o.name === device.building)
+    const safeZone = findNearestSafeZone(building, display)
+    if (!building || !safeZone) return []
+    return [{ device_id: device.device_id, threat_level: incident.threat_level, from: centerOf(building), to: centerOf(safeZone), safeZoneName: safeZone.name }]
+  })
 
   return (
     <div ref={canvasRef} data-map-canvas onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
@@ -121,14 +154,22 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
               boxShadow: `0 0 0 3px ${statusColor}33`,
             }}
           >
-            🧯
+                        🧯
           </div>
+        )
+      })}
+      {activeRoutes.map(route => {
+        const color = route.threat_level === 'Red' ? '#ef4444' : '#f97316'
+        return (
+          <svg key={`route-${route.device_id}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 4 }} viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}>
+            <line x1={route.from.cx} y1={route.from.cy} x2={route.to.cx} y2={route.to.cy} stroke={color} strokeWidth={4} strokeDasharray="10 6" opacity={0.9} />
+            <circle cx={route.to.cx} cy={route.to.cy} r={10} fill={color} opacity={0.9} />
+          </svg>
         )
       })}
     </div>
   )
 }
-
 
 type Interaction = { id: number; resize: boolean; startX: number; startY: number; item: MapObject; children: MapObject[]; pointerId: number }
 
