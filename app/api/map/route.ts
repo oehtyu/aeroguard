@@ -70,7 +70,10 @@ export async function PUT(req: NextRequest) {
       UPDATE map_objects
       SET object_type=${data.object_type}, name=${data.name.trim()}, color=${data.color || '#1e3a5f'},
           x=${Number(data.x)}, y=${Number(data.y)}, width=${Number(data.width)}, height=${Number(data.height)},
-          parent_id=${data.parent_id || null}, floor=${data.floor || null}, updated_at=NOW()
+          parent_id=${data.parent_id || null}, floor=${data.floor || null},
+          pin_x=${data.pin_x != null ? Number(data.pin_x) : null},
+          pin_y=${data.pin_y != null ? Number(data.pin_y) : null},
+          updated_at=NOW()
       WHERE map_object_id=${Number(data.map_object_id)}
       RETURNING *
     `
