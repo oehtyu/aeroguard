@@ -716,11 +716,16 @@ useEffect(() => {
     if(v==='equipment')loadEquipment()
     if(v==='devices')loadDevices()
     if(v==='incidents')loadIncidents()
-    if(v==='map' || v==='mapEditor'){
+        if(v==='map'){
   loadDevices()
   loadIncidents()
   loadEquipment()
   loadMapObjects()
+}
+if(v==='mapEditor'){
+  loadDevices()
+  loadIncidents()
+  loadEquipment()
 }
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
