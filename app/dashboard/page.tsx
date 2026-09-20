@@ -294,20 +294,43 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
   const myReports = reports.filter(r => String(r.user_id) === String(user?.user_id))
   const [openReport, setOpenReport] = useState<any>(null)
   const [actionsTaken, setActionsTaken] = useState('')
-  const [remarks, setRemarks] = useState('')
+    const [remarks, setRemarks] = useState('')
+  const [photoData, setPhotoData] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  // Resizes/compresses the photo client-side before it ever leaves the
+  // browser, so a report stays a reasonable size in the database no matter
+  // how large the original phone photo was.
+  const handlePhoto = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const maxDim = 800
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
+        setPhotoData(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  }
 
   const submit = async () => {
     if (!actionsTaken.trim()) { setErr('Please describe the actions you took.'); return }
     setSaving(true); setErr('')
     const res = await fetch('/api/reports', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks }),
+      body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks, photo_data: photoData || null }),
     }).then(r => r.json())
     setSaving(false)
     if (!res.success) { setErr(res.message); return }
-    setOpenReport(null); setActionsTaken(''); setRemarks('')
+    setOpenReport(null); setActionsTaken(''); setRemarks(''); setPhotoData('')
     onSubmitted()
   }
 
@@ -325,10 +348,11 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
             <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginTop: 2 }}>
               {r.threat_level} alert · {new Date(r.created_at).toLocaleString()}
             </div>
-            {r.status === 'Submitted' && (
+                        {r.status === 'Submitted' && (
               <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
                 <div><b>Actions taken:</b> {r.actions_taken}</div>
                 {r.remarks && <div style={{ marginTop: 4 }}><b>Remarks:</b> {r.remarks}</div>}
+                {r.photo_data && <img src={r.photo_data} alt="Submitted proof" style={{ marginTop: 8, maxWidth: 220, borderRadius: 6, display: 'block' }} />}
               </div>
             )}
           </div>
@@ -359,10 +383,15 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
                       placeholder="What did you do when you responded?"
                       style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, padding: 10, color: 'var(--text)', fontSize: '.85rem', fontFamily: 'var(--font)', resize: 'vertical', marginBottom: 12 }} />
 
-            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Remarks (optional)</label>
+                        <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Remarks (optional)</label>
             <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
                       placeholder="Anything else worth noting?"
                       style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, padding: 10, color: 'var(--text)', fontSize: '.85rem', fontFamily: 'var(--font)', resize: 'vertical', marginBottom: 12 }} />
+
+            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Photo (optional)</label>
+            <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handlePhoto(e.target.files[0])}
+                   style={{ width: '100%', color: 'var(--text)', fontSize: '.8rem', marginBottom: 12 }} />
+            {photoData && <img src={photoData} alt="Preview" style={{ maxWidth: 160, borderRadius: 6, marginBottom: 12, display: 'block' }} />}
 
             {err && <div style={{ color: 'var(--red)', fontSize: '.78rem', marginBottom: 12 }}>{err}</div>}
 
@@ -608,7 +637,8 @@ useEffect(() => {
 }, [view])
 
   const [respStatus,setRespStatus]=useState<any>(null)
-    const [respDismissedFor,setRespDismissedFor]=useState<Record<string,number>>({})
+  const [respDismissedFor,setRespDismissedFor]=useState<Record<string,number>>({})
+  const [respManualOpen,setRespManualOpen]=useState(false)
   const [myResponses,setMyResponses]=useState<Set<string>>(new Set())
   const respDeviceRef=useRef<{device_id:string}|null>(null)
 
@@ -931,6 +961,7 @@ setModal(null);loadUsers()
 function declineResponse() {
   const d = respDeviceRef.current
   if (d && respStatus) setRespDismissedFor(prev=>({...prev,[d.device_id]:respStatus.limit}))
+  setRespManualOpen(false)
 }
   async function resolveIncident(incident_id:number){
     const d=await api('/api/incidents','PUT',{incident_id})
@@ -1135,17 +1166,28 @@ o.name.trim() !== '')
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:respStatus?10:0}}>
                 🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
               </div>
-              {respStatus&&respStatus.limit>0&&<ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>}
+                            {respStatus&&respStatus.limit>0&&(
+                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+                     style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+                                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+              </div>
+                </div>
+              )}
             </div>
           )}
           {!redInc&&activeEvacDevice&&respStatus&&respStatus.limit>0&&(
             <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:8,padding:'10px 16px',marginBottom:16}}>
               <div style={{fontSize:'.78rem',color:'var(--orange)',marginBottom:10}}>🟠 <strong>Orange Alert</strong> — {activeEvacInc?.location}. Response requested.</div>
-              <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+                            <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+              </div>
             </div>
           )}
-
-                    {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&(respDismissedFor[respDeviceRef.current?.device_id||'']===undefined||respDismissedFor[respDeviceRef.current?.device_id||'']<respStatus.limit)&&(
+          {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&(respManualOpen||respDismissedFor[respDeviceRef.current?.device_id||'']===undefined||respDismissedFor[respDeviceRef.current?.device_id||'']<respStatus.limit)&&(
+          
             <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',backdropFilter:'blur(4px)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
               <div style={{background:'var(--panel)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.4)':'rgba(249,115,22,.4)'}`,borderRadius:14,width:420,maxWidth:'92vw',overflow:'hidden'}}>
                 <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)'}}>
@@ -1399,7 +1441,8 @@ o.name.trim() !== '')
                         </div>
                         {r.status==='Submitted' ? (
                           <>
-                            <div style={{fontSize:'.8rem',marginTop:6}}><b>Actions taken:</b> {r.actions_taken}</div>
+                                                        <div style={{fontSize:'.8rem',marginTop:6}}><b>Actions taken:</b> {r.actions_taken}</div>
+                            {r.photo_data && <img src={r.photo_data} alt="Submitted proof" style={{marginTop:6,maxWidth:200,borderRadius:6,display:'block'}} />}
                             {r.remarks&&<div style={{fontSize:'.8rem',marginTop:4}}><b>Remarks:</b> {r.remarks}</div>}
                           </>
                         ) : (

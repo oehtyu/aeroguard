@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 // further edits are possible (matches "no further actions until then").
 export async function PUT(req: NextRequest) {
   try {
-    const { report_id, user_id, actions_taken, remarks } = await req.json();
+        const { report_id, user_id, actions_taken, remarks, photo_data } = await req.json();
     if (!report_id || !user_id) return NextResponse.json({ success: false, message: 'report_id and user_id are required.' });
     if (!actions_taken?.trim()) return NextResponse.json({ success: false, message: 'Please describe the actions you took.' });
 
@@ -39,9 +39,9 @@ export async function PUT(req: NextRequest) {
     if (String(existing[0].user_id) !== String(user_id)) return NextResponse.json({ success: false, message: 'This report does not belong to you.' });
     if (existing[0].status === 'Submitted') return NextResponse.json({ success: false, message: 'This report was already submitted.' });
 
-    await sql`
+        await sql`
       UPDATE incident_reports
-      SET actions_taken=${actions_taken}, remarks=${remarks || null}, status='Submitted', submitted_at=NOW()
+      SET actions_taken=${actions_taken}, remarks=${remarks || null}, photo_data=${photo_data || null}, status='Submitted', submitted_at=NOW()
       WHERE report_id=${report_id}
     `;
     return NextResponse.json({ success: true, message: 'Report submitted.' });
