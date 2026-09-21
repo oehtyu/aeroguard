@@ -992,14 +992,20 @@ function declineResponse() {
     loadIncidents(incFilter)
   }
 
-    async function handleExport(type:string){
+      const dateFilteredIncidents = incidents.filter(i=>{
+    if(incFrom&&new Date(i.created_at)<new Date(incFrom)) return false
+    if(incTo&&new Date(i.created_at)>new Date(incTo+'T23:59:59')) return false
+    return true
+  })
+
+  async function handleExport(type:string){
     setExportMenu(false);setExportLoading(type)
-    const filename=buildBatchFilename(incidents,incFilter,incFrom,incTo)
+    const filename=buildBatchFilename(dateFilteredIncidents,incFilter,incFrom,incTo)
     try{
-      if(type==='csv') exportCSV(incidents,filename)
-      else if(type==='txt') exportTXT(incidents,filename)
-      else if(type==='pdf') await exportPDF(incidents,filename)
-      else if(type==='docx') await exportDOCX(incidents,filename)
+      if(type==='csv') exportCSV(dateFilteredIncidents,filename)
+      else if(type==='txt') exportTXT(dateFilteredIncidents,filename)
+      else if(type==='pdf') await exportPDF(dateFilteredIncidents,filename)
+      else if(type==='docx') await exportDOCX(dateFilteredIncidents,filename)
     } finally{setExportLoading(null)}
   }
 
@@ -1397,14 +1403,10 @@ o.name.trim() !== '')
                 </div>
               </div>
            <div style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 1.4fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
+                                <div style={{display:'grid',gridTemplateColumns:'1fr 1.1fr 1.3fr 0.9fr 0.9fr 1.4fr 1fr',padding:'8px 20px',color:'var(--muted)',fontSize:'.65rem',textTransform:'uppercase',letterSpacing:1,fontFamily:'var(--mono)',borderBottom:'1px solid var(--border)'}}>
                   <span>Time</span><span>Device</span><span>Location</span><span>Level</span><span>PM2.5</span><span>Reports</span><span>Action</span>
                 </div>
-                {incidents.filter(i=>{
-                  if(incFrom&&new Date(i.created_at)<new Date(incFrom)) return false
-                  if(incTo&&new Date(i.created_at)>new Date(incTo+'T23:59:59')) return false
-                  return true
-                }).map(i=>{
+                {dateFilteredIncidents.map(i=>{
                   const linkedReports=reports.filter(r=>r.incident_id===i.incident_id)
                   const submitted=linkedReports.filter(r=>r.status==='Submitted')
                   return (
