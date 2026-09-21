@@ -321,17 +321,22 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
     reader.readAsDataURL(file)
   }
 
-  const submit = async () => {
+    const submit = async () => {
     if (!actionsTaken.trim()) { setErr('Please describe the actions you took.'); return }
     setSaving(true); setErr('')
-    const res = await fetch('/api/reports', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks, photo_data: photoData || null }),
-    }).then(r => r.json())
-    setSaving(false)
-    if (!res.success) { setErr(res.message); return }
-    setOpenReport(null); setActionsTaken(''); setRemarks(''); setPhotoData('')
-    onSubmitted()
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks, photo_data: photoData || null }),
+      }).then(r => r.json())
+      if (!res.success) { setErr(res.message || 'Could not save. Please try again.'); return }
+      setOpenReport(null); setActionsTaken(''); setRemarks(''); setPhotoData('')
+      onSubmitted()
+    } catch (error: any) {
+      setErr('Network error — check your connection and try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -578,25 +583,42 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
   )
 }
 // ── EXPORT HELPERS ────────────────────────────────────────────
-function exportCSV(incidents: any[]) {
+function exportCSV(incidents: any[], filename: string) {
   const rows=['Time,Device,Location,Level,PM2.5,Status',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved?'Resolved':'Active'}"`)]
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:'aeroguard_incidents.csv'});a.click()
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:`${filename}.csv`});a.click()
 }
-function exportTXT(incidents: any[]) {
+function exportTXT(incidents: any[], filename: string) {
   const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Status','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.resolved?'Resolved':'Active'}`)]
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:'aeroguard_incidents.txt'});a.click()
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:`${filename}.txt`});a.click()
 }
-async function exportPDF(incidents: any[]) {
-  const res=await fetch('/api/export/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
-  if(!res.ok){alert('PDF export failed.');return}
-  const blob=await res.blob()
-  Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'aeroguard_incidents.pdf'}).click()
+async function exportPDF(incidents: any[], filename: string) {
+  try {
+    const res=await fetch('/api/export/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
+    if(!res.ok){alert('PDF export failed. Please try again.');return}
+    const blob=await res.blob()
+    Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${filename}.pdf`}).click()
+  } catch (error: any) {
+    alert('PDF export failed — check your connection and try again.')
+  }
 }
-async function exportDOCX(incidents: any[]) {
-  const res=await fetch('/api/export/docx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
-  if(!res.ok){alert('DOCX export failed.');return}
-  const blob=await res.blob()
-  Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'aeroguard_incidents.docx'}).click()
+async function exportDOCX(incidents: any[], filename: string) {
+  try {
+    const res=await fetch('/api/export/docx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({incidents})})
+    if(!res.ok){alert('DOCX export failed. Please try again.');return}
+    const blob=await res.blob()
+    Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${filename}.docx`}).click()
+  } catch (error: any) {
+    alert('DOCX export failed — check your connection and try again.')
+  }
+}
+// Builds e.g. "RED-SEP15,2026-SEP19,2026-AEROGUARD" or "ALL-LEVELS-SEP15,2026-SEP19,2026-AEROGUARD"
+function buildBatchFilename(incidents: any[], level: string, from: string, to: string) {
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US',{month:'short',day:'numeric'}).replace(' ','').toUpperCase()+','+d.getFullYear()
+  const dates = incidents.map(i=>new Date(i.created_at)).filter(d=>!isNaN(d.getTime()))
+  const fromDate = from ? new Date(from) : (dates.length ? new Date(Math.min(...dates.map(d=>d.getTime()))) : new Date())
+  const toDate = to ? new Date(to) : (dates.length ? new Date(Math.max(...dates.map(d=>d.getTime()))) : new Date())
+  const levelPart = level ? level.toUpperCase() : 'ALL-LEVELS'
+  return `${levelPart}-${fmtDate(fromDate)}-${fmtDate(toDate)}-AEROGUARD`
 }
 
 // ── VALIDATION ────────────────────────────────────────────────
@@ -970,13 +992,14 @@ function declineResponse() {
     loadIncidents(incFilter)
   }
 
-  async function handleExport(type:string){
+    async function handleExport(type:string){
     setExportMenu(false);setExportLoading(type)
+    const filename=buildBatchFilename(incidents,incFilter,incFrom,incTo)
     try{
-      if(type==='csv') exportCSV(incidents)
-      else if(type==='txt') exportTXT(incidents)
-      else if(type==='pdf') await exportPDF(incidents)
-      else if(type==='docx') await exportDOCX(incidents)
+      if(type==='csv') exportCSV(incidents,filename)
+      else if(type==='txt') exportTXT(incidents,filename)
+      else if(type==='pdf') await exportPDF(incidents,filename)
+      else if(type==='docx') await exportDOCX(incidents,filename)
     } finally{setExportLoading(null)}
   }
 
@@ -1349,7 +1372,7 @@ o.name.trim() !== '')
               <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
                 <select onChange={e=>{setIncFilter(e.target.value);loadIncidents(e.target.value)}} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.82rem',width:160}}>
                   <option value=''>All Levels</option>
-                  {['Gray','Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
+                                    {['Yellow','Orange','Red'].map(l=><option key={l} value={l}>{l}</option>)}
                   
                 </select>
                                 <input type="date" value={incFrom} max={incTo||undefined} onChange={e=>setIncFrom(e.target.value)} style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--font)',fontSize:'.78rem'}}/>
@@ -1453,7 +1476,17 @@ o.name.trim() !== '')
 
                     <div className="no-print" style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}>
                       <button onClick={()=>setViewIncident(null)} style={{padding:'8px 16px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--text)',fontSize:'.8rem',cursor:'pointer'}}>Close</button>
-                      <button onClick={()=>window.print()} style={{padding:'8px 16px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer'}}>Export / Print</button>
+                      <button onClick={()=>{
+                        const original=document.title
+                                      const loc=(viewIncident.location||'').split(',')[0].trim()
+              const d=new Date(viewIncident.created_at)
+              const datestr=d.toLocaleDateString('en-US',{month:'short',day:'numeric'}).replace(' ','').toUpperCase()+','+d.getFullYear()
+              const timeStr=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).replace(':',',').replace(' ','')
+              const device=(viewIncident.device_id||'').replace(/-/g,'')
+              document.title=`${loc}-${datestr}-${timeStr}-${device}-${(viewIncident.threat_level||'').toUpperCase()}`
+                        window.print()
+                        setTimeout(()=>{document.title=original},500)
+                      }} style={{padding:'8px 16px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer'}}>Export / Print</button>
                     </div>
                   </div>
               

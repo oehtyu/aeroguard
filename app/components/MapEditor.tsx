@@ -62,7 +62,10 @@ export function findNearestSafeZone(building: MapObject | undefined | null, allO
   let best: MapObject | null = null
   let bestDist = Infinity
   for (const zone of safeZones) {
-    const z = pinOf(zone)
+    // Deliberately the zone's own rectangle center here, NOT its draggable
+    // pin — which zone is "nearest" should reflect real campus geometry,
+    // not wherever an admin happened to drag that zone's flag for display.
+    const z = centerOf(zone)
     const dist = Math.hypot(z.cx - b.cx, z.cy - b.cy)
     if (dist < bestDist) { bestDist = dist; best = zone }
   }
