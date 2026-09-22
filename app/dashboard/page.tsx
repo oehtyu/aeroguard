@@ -584,11 +584,11 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
 }
 // ── EXPORT HELPERS ────────────────────────────────────────────
 function exportCSV(incidents: any[], filename: string) {
-  const rows=['Time,Device,Location,Level,PM2.5,Status',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}","${i.resolved?'Resolved':'Active'}"`)]
+  const rows=['Time,Device,Location,Level,PM2.5',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}"`)]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:`${filename}.csv`});a.click()
 }
 function exportTXT(incidents: any[], filename: string) {
-  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Status','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.resolved?'Resolved':'Active'}`)]
+  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³`)]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:`${filename}.txt`});a.click()
 }
 async function exportPDF(incidents: any[], filename: string) {

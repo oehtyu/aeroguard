@@ -26,16 +26,14 @@ const WHITE = rgb(1, 1, 1);
 
 export async function POST(req: NextRequest) {
   try {
-    const { incidents } = await req.json();
+        const { incidents } = await req.json();
     const rows = (incidents || []).map((i: any) => ({
       time: fmtTime(i.created_at),
       device: i.device_id || '',
-      location: (i.location || '').slice(0, 30),
+      location: (i.location || '').slice(0, 35),
       level: i.threat_level || 'Gray',
       pm25: `${i.pm25_value ?? '-'} \u00b5g/m\u00b3`,
-      status: i.resolved ? 'Resolved' : 'Active',
     }));
-
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -43,8 +41,8 @@ export async function POST(req: NextRequest) {
     const [pageW, pageH] = PageSizes.Letter;
     const margin = 40;
     const usableW = pageW - margin * 2;
-    const colWidths = [80, 60, 155, 55, 75, 65]; // sums to 490 ~ usableW
-    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Status'];
+        const colWidths = [85, 65, 190, 65, 85]; // sums to 490 ~ usableW
+    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5'];
     const rowH = 20;
     const headerH = 22;
 
@@ -79,7 +77,7 @@ export async function POST(req: NextRequest) {
       }
       let x = margin;
       page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
-      const cells = [row.time, row.device, row.location, row.level, row.pm25, row.status];
+            const cells = [row.time, row.device, row.location, row.level, row.pm25];
       cells.forEach((cell, ci) => {
         const isLevel = ci === 3;
         const color = isLevel ? hex(LEVEL_COLORS[row.level] || '94a3b8') : TEXT;
