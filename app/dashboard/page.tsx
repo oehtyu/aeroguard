@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import MapEditor, { MapCanvas, MapObject, findNearestSafeZone } from '../components/MapEditor'
+import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, sameBuilding } from '../components/MapEditor'
+import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
 
 const SESSION_KEY     = 'ag_user'
@@ -1061,7 +1062,9 @@ function declineResponse() {
   },[activeEvacDevice?.device_id])
 
     const activeBuildingObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='building'&&o.name===activeEvacDevice.building)
-  const activeSafeZone=findNearestSafeZone(activeBuildingObj,mapObjects)
+  const activeRoomObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='room'&&o.parent_name===activeEvacDevice.building&&o.name===activeEvacDevice.room&&(!activeEvacDevice.floor||!o.floor||o.floor===activeEvacDevice.floor))
+  // Same planner the map uses, so the guidance names the assembly area the drawn route actually reaches.
+  const activeSafeZone=planEvacuation(activeBuildingObj,activeRoomObj,mapObjects)?.safeZone||findNearestSafeZone(activeBuildingObj,mapObjects)
   const activeSteps=activeSafeZone&&activeEvacDevice?[
     'Proceed to the nearest exit.',
     `Head to the ${activeSafeZone.name} assembly area.`,
@@ -1282,7 +1285,7 @@ o.name.trim() !== '')
               building={activeEvacDevice.building}
               floor={activeEvacDevice.floor}
               assemblyArea={activeSafeZone?.name||null}
-              extinguishers={equipment.filter(e=>e.building===activeEvacDevice.building)}
+              extinguishers={equipment.filter(e=>sameBuilding(e.building,activeEvacDevice.building))}
               isResponder={myResponses.has(activeEvacDevice.device_id)}
               onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
             />
@@ -1408,6 +1411,7 @@ o.name.trim() !== '')
   incidents={incidents}
   equipment={equipment}
   onChanged={loadMapObjects}
+  onEquipmentChanged={loadEquipment}
 />
               )}
                     {/* ══ INCIDENT REPORTING ══ */}
@@ -1892,7 +1896,7 @@ setForm({
                   </div>
                   <div>{lbl('Last Inspection Date')}{input('last_inspection','','date')}</div>
                 </div>
-                <div style={{marginTop:4,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each map location can only hold one extinguisher. Occupied slots will show an error.</div>
+                <div style={{marginTop:4,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each location holds one extinguisher. After saving, open Map Editor and drag the 🧯 to its exact spot on the map.</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>

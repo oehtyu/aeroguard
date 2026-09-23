@@ -1,6 +1,7 @@
 'use client'
 
 import { PointerEvent, RefObject, useEffect, useRef, useState } from 'react'
+import { planEvacuation } from './evacuation'
 
 export type MapObject = {
   map_object_id: number
@@ -31,6 +32,11 @@ const numberValue = (value: unknown, fallback: number) => {
   return Number.isFinite(number) ? number : fallback
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
+// "COAS Building" (equipment record) and "COAS" (map block) are the same place.
+// Compare names loosely so a wording difference never makes a marker vanish.
+const normName = (v: unknown) => String(v ?? '').toLowerCase().replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+export const sameBuilding = (a: unknown, b: unknown) => normName(a) === normName(b) && normName(a) !== ''
 
 function normaliseObject(object: MapObject): MapObject {
   return {
@@ -82,6 +88,9 @@ type CanvasProps = {
     onPointerDown?: (event: PointerEvent<HTMLDivElement>, object: MapObject, resize?: boolean, pin?: boolean) => void
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void
+  // Editor only: start dragging an extinguisher, and positions dragged this session.
+  onEquipmentPointerDown?: (event: PointerEvent<HTMLDivElement>, item: any, building: MapObject) => void
+  equipmentOffsets?: Record<string, { x: number; y: number }>
   // true only inside the admin Map Editor. Controls two things: Assembly
   // Area blocks render faint/see-through (so the admin can see what's
   // underneath while positioning a large zone) instead of the compact pin
@@ -89,7 +98,7 @@ type CanvasProps = {
   isEditor?: boolean
 }
 
-export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp, isEditor = false }: CanvasProps) {
+export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp, onEquipmentPointerDown, equipmentOffsets = {}, isEditor = false }: CanvasProps) {
   const display = objects.map(normaliseObject)
   const activeByDevice = new Map(incidents.filter(incident => !incident.resolved).map(incident => [incident.device_id, incident]))
   // Assembly Areas render as a compact pin outside the editor, so they
@@ -134,8 +143,16 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
     const incident = activeByDevice.get(device.device_id) as any
     if (!incident || (incident.threat_level !== 'Orange' && incident.threat_level !== 'Red')) return []
     const building = display.find(o => o.object_type === 'building' && o.name === device.building)
+    if (!building) return []
+    const room = display.find(o => o.object_type === 'room' && o.parent_name === device.building && o.name === device.room && (!device.floor || !o.floor || o.floor === device.floor))
+
+    // Preferred: a real path around buildings and walls to the nearest reachable Assembly Area.
+    const plan = planEvacuation(building, room, display)
+    if (plan) return [{ device_id: device.device_id, threat_level: incident.threat_level, points: plan.points, safeZoneName: plan.safeZone.name }]
+
+    // Fallback (no assembly area is reachable): the old straight L-shaped hint.
     const safeZone = findNearestSafeZone(building, display)
-    if (!building || !safeZone) return []
+    if (!safeZone) return []
     const points = bentRoute(centerOf(building), pinOf(safeZone), building.map_object_id)
     return [{ device_id: device.device_id, threat_level: incident.threat_level, points, safeZoneName: safeZone.name }]
   })
@@ -195,57 +212,53 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
           return <div key={device.device_id} title={`${device.device_id} — ${device.device_name || 'Smoke detector'}`} style={{ position: 'absolute', left: room.x + room.width / 2, top: room.y + room.height / 2, transform: 'translate(-50%, -50%)', width: 24, height: 24, borderRadius: '50%', background: color, border: '2px solid white', zIndex: 5, display: 'grid', placeItems: 'center', fontSize: 12, pointerEvents: 'none', boxShadow: `0 0 0 3px ${color}33` }}>📡</div>
         })}
         {equipment.map((item, index) => {
-          const building = display.find(object =>
-            object.object_type === 'building' && object.name === item.building
-          )
+          const building = display.find(object => object.object_type === 'building' && sameBuilding(object.name, item.building))
           if (!building) return null
 
-          // Locations chosen in the dashboard read "Near <room name>". If that
-          // room exists on the map, pin the extinguisher to the room's corner
-          // so it shows up exactly where it was assigned.
-          const wanted = /^near\s+(.+)$/i.exec(String(item.location_description || '').trim())?.[1]?.trim().toLowerCase()
+          // 1) An admin-placed position (stored relative to the building, so it
+          //    follows the building if it is moved). 2) The room named in the
+          //    location ("Near Room 101"). 3) A tidy spot on the building edge.
+          const dragged = equipmentOffsets[String(item.equipment_id)]
+          const saved = item.map_x != null && item.map_y != null && Number.isFinite(Number(item.map_x)) && Number.isFinite(Number(item.map_y))
+            ? { x: Number(item.map_x), y: Number(item.map_y) } : null
+          const offset = dragged || saved
+
+          const desc = String(item.location_description || '').trim()
+          const squash = (v: string) => v.trim().toLowerCase().replace(/\s+/g, '')
+          const wanted = squash(/^near\s+(.+)$/i.exec(desc)?.[1] ?? /\broom\s*(\d+)/i.exec(desc)?.[0] ?? '')
           const room = wanted
-            ? display.find(o => o.object_type === 'room' && o.parent_name === item.building &&
-                o.name.trim().toLowerCase() === wanted && (!item.floor || !o.floor || o.floor === item.floor))
+            ? display.find(o => o.object_type === 'room' && o.parent_id === building.map_object_id &&
+                squash(o.name) === wanted && (!item.floor || !o.floor || o.floor === item.floor))
             : undefined
 
           let markerX: number
           let markerY: number
-          if (room) {
+          if (offset) {
+            markerX = building.x + offset.x
+            markerY = building.y + offset.y
+          } else if (room) {
             markerX = clamp(room.x + room.width - 12, room.x + 12, room.x + room.width)
             markerY = clamp(room.y + room.height - 12, room.y + 12, room.y + room.height)
           } else {
-            // Hallway / stairs / older records: spread around the building's
-            // upper-right corner so markers never overlap.
-            const generic = equipment.filter(e => e.building === item.building)
+            const generic = equipment.filter(e => sameBuilding(e.building, item.building))
             const positionInBuilding = generic.findIndex(e => String(e.equipment_id) === String(item.equipment_id))
-            const column = positionInBuilding % 3
-            const rowIdx = Math.floor(positionInBuilding / 3)
-            markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
-            markerY = clamp(building.y + 18 + rowIdx * 28, building.y + 12, building.y + building.height - 12)
+            markerX = clamp(building.x + building.width - 18 - (positionInBuilding % 3) * 28, building.x + 12, building.x + building.width - 12)
+            markerY = clamp(building.y + 18 + Math.floor(positionInBuilding / 3) * 28, building.y + 12, building.y + building.height - 12)
           }
+          const placed = !!offset
           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
 
           return (
             <div
               key={`extinguisher-${item.equipment_id || index}`}
-              title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}`}
+              title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}${isEditor ? (placed ? ' | drag to move' : ' | not placed yet - drag it to its exact spot') : ''}`}
+              onPointerDown={event => isEditor && onEquipmentPointerDown?.(event, item, building)}
               style={{
-                position: 'absolute',
-                left: markerX,
-                top: markerY,
-                transform: 'translate(-50%, -50%)',
-                width: 23,
-                height: 23,
-                borderRadius: 5,
-                background: statusColor,
-                border: '2px solid white',
-                zIndex: 6,
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: 13,
-                // hoverable on the live map; click-through in the editor so dragging still works
-                pointerEvents: isEditor ? 'none' : 'auto',
+                position: 'absolute', left: markerX, top: markerY, transform: 'translate(-50%, -50%)',
+                width: 23, height: 23, borderRadius: 5, background: statusColor,
+                border: isEditor && !placed ? '2px dashed white' : '2px solid white',
+                zIndex: 7, display: 'grid', placeItems: 'center', fontSize: 13,
+                cursor: isEditor ? 'grab' : 'default', touchAction: 'none',
                 boxShadow: `0 0 0 3px ${statusColor}33`,
               }}
             >
@@ -281,7 +294,7 @@ type Interaction = {
 }
 
 
-export default function MapEditor({ initialObjects, adminId, onChanged, devices = [], incidents = [], equipment = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; devices?: any[]; incidents?: any[]; equipment?: any[] }) {
+export default function MapEditor({ initialObjects, adminId, onChanged, onEquipmentChanged, devices = [], incidents = [], equipment = [] }: { initialObjects: MapObject[]; adminId: number; onChanged: () => Promise<void> | void; onEquipmentChanged?: () => Promise<void> | void; devices?: any[]; incidents?: any[]; equipment?: any[] }) {
   // Important: this is deliberately a local editor copy. It must NOT be reset
   // by Dashboard's live refresh while the user is dragging.
   const [objects, setObjects] = useState<MapObject[]>(() => initialObjects.map(normaliseObject))
@@ -296,6 +309,31 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
   const objectsRef = useRef<MapObject[]>(initialObjects.map(normaliseObject))
   const interaction = useRef<Interaction | null>(null)
   const writeQueue = useRef<Promise<unknown>>(Promise.resolve())
+
+  // Extinguisher placement. Positions are stored relative to the building's
+  // top-left corner, so an extinguisher stays put inside its building if the
+  // building is later moved.
+  const [extOffsets, setExtOffsets] = useState<Record<string, { x: number; y: number }>>({})
+  const extDrag = useRef<{ id: string; buildingId: number; startX: number; startY: number; baseX: number; baseY: number; last: { x: number; y: number } } | null>(null)
+
+  function beginExt(event: PointerEvent<HTMLDivElement>, item: any, building: MapObject) {
+    event.preventDefault(); event.stopPropagation()
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = CANVAS_W / rect.width, scaleY = CANVAS_H / rect.height
+    // where the marker is drawn right now (its centre), in map coordinates
+    const el = event.currentTarget.getBoundingClientRect()
+    const cx = (el.left + el.width / 2 - rect.left) * scaleX
+    const cy = (el.top + el.height / 2 - rect.top) * scaleY
+    canvas.setPointerCapture(event.pointerId)
+    const base = { x: cx - building.x, y: cy - building.y }
+    extDrag.current = {
+      id: String(item.equipment_id), buildingId: building.map_object_id,
+      startX: (event.clientX - rect.left) * scaleX, startY: (event.clientY - rect.top) * scaleY,
+      baseX: base.x, baseY: base.y, last: base,
+    }
+  }
 
   const replaceObjects = (updater: MapObject[] | ((current: MapObject[]) => MapObject[])) => {
     setObjects(current => {
@@ -329,8 +367,20 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     setSelectedId(object.map_object_id)
   }
   function move(event: PointerEvent<HTMLDivElement>) {
-    const active = interaction.current
     const canvas = canvasRef.current
+    const ext = extDrag.current
+    if (ext && canvas) {
+      const rect = canvas.getBoundingClientRect()
+      const building = objectsRef.current.find(o => o.map_object_id === ext.buildingId)
+      if (!building) return
+      const dx = (event.clientX - rect.left) * CANVAS_W / rect.width - ext.startX
+      const dy = (event.clientY - rect.top) * CANVAS_H / rect.height - ext.startY
+      // may sit just outside the wall (e.g. beside an exit door), but not far away
+      ext.last = { x: clamp(ext.baseX + dx, -24, building.width + 24), y: clamp(ext.baseY + dy, -24, building.height + 24) }
+      setExtOffsets(current => ({ ...current, [ext.id]: ext.last }))
+      return
+    }
+    const active = interaction.current
     if (!active || !canvas) return
     const rect = canvas.getBoundingClientRect()
     const dx = (event.clientX - rect.left) * CANVAS_W / rect.width - active.startX
@@ -367,6 +417,25 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
     })
   }
   function end(event: PointerEvent<HTMLDivElement>) {
+    const ext = extDrag.current
+    if (ext) {
+      extDrag.current = null
+      if (canvasRef.current?.hasPointerCapture(event.pointerId)) canvasRef.current.releasePointerCapture(event.pointerId)
+      const pos = { x: Math.round(ext.last.x * 10) / 10, y: Math.round(ext.last.y * 10) / 10 }
+      void enqueue(async () => {
+        const response = await fetch('/api/equipment', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_id: adminId, equipment_id: Number(ext.id), position_only: true, map_x: pos.x, map_y: pos.y }),
+        })
+        const data = await response.json()
+        if (!data.success) throw new Error(data.message || 'Could not save the extinguisher position.')
+        setMessage('Extinguisher position saved.'); void onEquipmentChanged?.()
+      }).catch((error: any) => {
+        setMessage(error.message)
+        setExtOffsets(current => { const next = { ...current }; delete next[ext.id]; return next })
+      })
+      return
+    }
     const active = interaction.current
     if (!active) return
     interaction.current = null
@@ -412,10 +481,10 @@ export default function MapEditor({ initialObjects, adminId, onChanged, devices 
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor />
+      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} equipmentOffsets={extOffsets} onEquipmentPointerDown={beginExt} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor />
       <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
         <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
-        <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner.</p>
+        <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner. Drag each 🧯 extinguisher to its exact spot (dashed outline = not placed yet).</p>
 
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
           <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)' }}>New item type</label>
