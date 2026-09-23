@@ -1,0 +1,672 @@
+diff --git a/app/api/devices/heartbeat/route.ts b/app/api/devices/heartbeat/route.ts
+index 9f93dc1..5ef2243 100644
+--- a/app/api/devices/heartbeat/route.ts
++++ b/app/api/devices/heartbeat/route.ts
+@@ -9,8 +9,8 @@ export const revalidate = 0;
+ const LEVEL_RANK: Record<string, number> = { Gray: 0, Yellow: 1, Orange: 2, Red: 3 };
+ const SEVERITY_MESSAGE: Record<string, string> = {
+   Yellow: 'Low-level smoke or vapor detected. Please stay alert.',
+-  Orange: 'High smoke level detected. Possible fire — assistance may be needed.',
+-  Red: 'Critical smoke level detected. Fire emergency — follow evacuation procedures.',
++  Orange: 'High smoke level detected. Possible fire — leave the affected area, stay alert, and open AeroGuard to see if you can assist.',
++  Red: 'Critical smoke level detected. Fire emergency — evacuate now using the stairs (not elevators), go to your assembly area, and do not go back inside.',
+ }
+ 
+ async function notifyEscalation(device: any, threat_level: string) {
+diff --git a/app/api/equipment/route.ts b/app/api/equipment/route.ts
+index 32c0fbf..c2186c0 100644
+--- a/app/api/equipment/route.ts
++++ b/app/api/equipment/route.ts
+@@ -1,57 +1,124 @@
+ import { NextRequest, NextResponse } from 'next/server';
+ import sql from '@/lib/db';
+ 
+-export async function GET() {
++const TYPES = new Set(['ABC', 'CO2', 'Water', 'Foam']);
++const STATUSES = new Set(['Active', 'Maintenance', 'Expired']);
++
++const clean = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
++
++// One extinguisher per (building, floor, location). Compared case- and
++// whitespace-insensitively so "Near Room 101 " and "near room 101" collide.
++async function findAtLocation(building: string, floor: string, desc: string, excludeId = 0) {
++  // excludeId = 0 matches no row, so the same query serves create and edit.
+   const rows = await sql`
+-    SELECT equipment_id, equipment_type, building, floor, location_description, status, last_inspection
+-    FROM fire_equipment ORDER BY equipment_id ASC
++    SELECT equipment_id, equipment_type FROM fire_equipment
++    WHERE LOWER(TRIM(building)) = LOWER(${building})
++      AND LOWER(TRIM(floor)) = LOWER(${floor})
++      AND LOWER(TRIM(location_description)) = LOWER(${desc})
++      AND equipment_id <> ${excludeId}
++    LIMIT 1
+   `;
+-  return NextResponse.json({ success: true, data: rows });
++  return rows[0] ?? null;
++}
++
++function taken(building: string, floor: string, desc: string, hit: any) {
++  return NextResponse.json(
++    {
++      success: false,
++      message: `${floor} — ${desc} in ${building} already has a ${hit.equipment_type} extinguisher (ID #${hit.equipment_id}). Pick a different location or edit that one.`,
++    },
++    { status: 409 }
++  );
++}
++
++function validate(b: any) {
++  const equipment_type = clean(b.equipment_type);
++  const building = clean(b.building);
++  const floor = clean(b.floor) || '1F';
++  const location_description = clean(b.location_description);
++  const status = clean(b.status) || 'Active';
++  const last_inspection = clean(b.last_inspection) || null;
++
++  if (!equipment_type) return { error: 'Equipment type is required.' };
++  if (!TYPES.has(equipment_type)) return { error: `Type must be one of: ${Array.from(TYPES).join(', ')}.` };
++  if (!building) return { error: 'Building is required.' };
++  if (!location_description) return { error: 'Location is required.' };
++  if (!STATUSES.has(status)) return { error: `Status must be one of: ${Array.from(STATUSES).join(', ')}.` };
++  if (last_inspection && Number.isNaN(Date.parse(last_inspection))) return { error: 'Last inspection is not a valid date.' };
++  return { value: { equipment_type, building, floor, location_description, status, last_inspection } };
++}
++
++export const dynamic = 'force-dynamic';
++export const revalidate = 0;
++
++export async function GET() {
++  try {
++    const rows = await sql`
++      SELECT equipment_id, equipment_type, building, floor, location_description, status, last_inspection
++      FROM fire_equipment ORDER BY equipment_id ASC
++    `;
++    return NextResponse.json({ success: true, data: rows });
++  } catch (err: any) {
++    console.error('[EQUIPMENT GET]', err);
++    return NextResponse.json({ success: false, message: `Failed to load equipment: ${err.message}` });
++  }
+ }
+ 
+ export async function POST(req: NextRequest) {
+-  const { equipment_type, building, floor, location_description, status, last_inspection } = await req.json();
+-  if (!equipment_type) return NextResponse.json({ success: false, message: 'Equipment type is required.' });
+-  if (!building) return NextResponse.json({ success: false, message: 'Building is required.' });
+-  if (!location_description) return NextResponse.json({ success: false, message: 'Location is required.' });
+-
+-  const existing = await sql`
+-    SELECT equipment_id FROM fire_equipment
+-    WHERE building = ${building} AND floor = ${floor} AND location_description = ${location_description}
+-  `;
+-  if (existing.length > 0)
+-    return NextResponse.json({ success: false, message: `That location already has a fire extinguisher. Choose a different spot.` });
++  try {
++    const v = validate(await req.json());
++    if (v.error) return NextResponse.json({ success: false, message: v.error }, { status: 400 });
++    const e = v.value!;
+ 
+-  await sql`
+-    INSERT INTO fire_equipment (equipment_type, building, floor, location_description, status, last_inspection)
+-    VALUES (${equipment_type}, ${building}, ${floor || '1F'}, ${location_description}, ${status || 'Active'}, ${last_inspection || null})
+-  `;
+-  return NextResponse.json({ success: true, message: 'Equipment added.' });
++    const hit = await findAtLocation(e.building, e.floor, e.location_description);
++    if (hit) return taken(e.building, e.floor, e.location_description, hit);
++
++    const rows = await sql`
++      INSERT INTO fire_equipment (equipment_type, building, floor, location_description, status, last_inspection)
++      VALUES (${e.equipment_type}, ${e.building}, ${e.floor}, ${e.location_description}, ${e.status}, ${e.last_inspection})
++      RETURNING equipment_id
++    `;
++    return NextResponse.json({ success: true, message: 'Equipment added.', equipment_id: rows[0]?.equipment_id });
++  } catch (err: any) {
++    console.error('[EQUIPMENT POST]', err);
++    return NextResponse.json({ success: false, message: `Could not save extinguisher: ${err.message}` }, { status: 500 });
++  }
+ }
+ 
+ export async function PUT(req: NextRequest) {
+-  const { equipment_id, equipment_type, building, floor, location_description, status, last_inspection } = await req.json();
+-  if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' });
++  try {
++    const body = await req.json();
++    const equipment_id = Number(body.equipment_id);
++    if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' }, { status: 400 });
+ 
+-  const existing = await sql`
+-    SELECT equipment_id FROM fire_equipment
+-    WHERE building = ${building} AND floor = ${floor} AND location_description = ${location_description}
+-    AND equipment_id != ${equipment_id}
+-  `;
+-  if (existing.length > 0)
+-    return NextResponse.json({ success: false, message: `That location already has a fire extinguisher. Choose a different spot.` });
++    const v = validate(body);
++    if (v.error) return NextResponse.json({ success: false, message: v.error }, { status: 400 });
++    const e = v.value!;
+ 
+-  await sql`
+-    UPDATE fire_equipment SET equipment_type=${equipment_type}, building=${building}, floor=${floor},
+-        location_description=${location_description}, status=${status}, last_inspection=${last_inspection || null}
+-    WHERE equipment_id=${equipment_id}
+-  `;
+-  return NextResponse.json({ success: true, message: 'Equipment updated.' });
++    const hit = await findAtLocation(e.building, e.floor, e.location_description, equipment_id);
++    if (hit) return taken(e.building, e.floor, e.location_description, hit);
++
++    await sql`
++      UPDATE fire_equipment
++      SET equipment_type=${e.equipment_type}, building=${e.building}, floor=${e.floor},
++          location_description=${e.location_description}, status=${e.status}, last_inspection=${e.last_inspection}
++      WHERE equipment_id=${equipment_id}
++    `;
++    return NextResponse.json({ success: true, message: 'Equipment updated.' });
++  } catch (err: any) {
++    console.error('[EQUIPMENT PUT]', err);
++    return NextResponse.json({ success: false, message: `Could not update extinguisher: ${err.message}` }, { status: 500 });
++  }
+ }
+ 
+ export async function DELETE(req: NextRequest) {
+-  const { equipment_id } = await req.json();
+-  if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' });
+-  await sql`DELETE FROM fire_equipment WHERE equipment_id=${equipment_id}`;
+-  return NextResponse.json({ success: true, message: 'Equipment deleted.' });
+-}
+\ No newline at end of file
++  try {
++    const { equipment_id } = await req.json();
++    if (!equipment_id) return NextResponse.json({ success: false, message: 'Equipment ID is required.' }, { status: 400 });
++    await sql`DELETE FROM fire_equipment WHERE equipment_id=${Number(equipment_id)}`;
++    return NextResponse.json({ success: true, message: 'Equipment deleted.' });
++  } catch (err: any) {
++    console.error('[EQUIPMENT DELETE]', err);
++    return NextResponse.json({ success: false, message: `Could not delete extinguisher: ${err.message}` }, { status: 500 });
++  }
++}
+diff --git a/app/components/Guidance.tsx b/app/components/Guidance.tsx
+new file mode 100644
+index 0000000..89baf20
+--- /dev/null
++++ b/app/components/Guidance.tsx
+@@ -0,0 +1,211 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++
++// ─────────────────────────────────────────────────────────────
++// Live guidance for an active Orange/Red alert.
++//
++// Two audiences, one card:
++//   • Evacuating  — everyone who is not fighting the fire
++//   • Responding  — people who tapped "I Can Respond"
++// The tab opens on the one that fits the viewer; either can be opened.
++//
++// NOTE: this is general fire-safety guidance. Have BPSU DRRM / the
++// local BFP review the wording before relying on it in a real drill.
++// ─────────────────────────────────────────────────────────────
++
++export type GuidanceProps = {
++  level: 'Orange' | 'Red'
++  location: string            // e.g. "CAHS Building, 1F, Room 104"
++  building?: string
++  floor?: string
++  assemblyArea?: string | null
++  extinguishers: any[]        // equipment rows already filtered to the affected building
++  isResponder: boolean        // this user accepted the response request
++  onRespond?: () => void      // opens the "Can you respond?" prompt
++}
++
++const EXT_USE: Record<string, { good: string; avoid: string }> = {
++  ABC:   { good: 'Paper, wood, cloth, flammable liquids, live electrical', avoid: 'Cooking oil / kitchen grease fires' },
++  CO2:   { good: 'Electrical equipment, computers, flammable liquids',     avoid: 'Paper/wood/cloth fires (fire can re-ignite)' },
++  Water: { good: 'Paper, wood, cloth ONLY',                                 avoid: 'Electrical equipment, flammable liquids, grease' },
++  Foam:  { good: 'Flammable liquids, paper, wood, cloth',                   avoid: 'Live electrical equipment' },
++}
++
++const card: React.CSSProperties = { background: 'var(--panel)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 }
++const stepNum: React.CSSProperties = {
++  flex: '0 0 22px', height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center',
++  fontSize: '.7rem', fontWeight: 700, fontFamily: 'var(--mono)',
++}
++
++function Steps({ items, color }: { items: { t: string; d?: string }[]; color: string }) {
++  return (
++    <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
++      {items.map((s, i) => (
++        <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
++          <span style={{ ...stepNum, background: `${color}22`, color, border: `1px solid ${color}55` }}>{i + 1}</span>
++          <span style={{ fontSize: '.8rem', lineHeight: 1.45 }}>
++            <strong>{s.t}</strong>{s.d ? <span style={{ color: 'var(--muted)' }}> — {s.d}</span> : null}
++          </span>
++        </li>
++      ))}
++    </ol>
++  )
++}
++
++function Note({ children, color }: { children: React.ReactNode; color: string }) {
++  return (
++    <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 6, fontSize: '.76rem', lineHeight: 1.45,
++                  background: `${color}12`, border: `1px solid ${color}40` }}>
++      {children}
++    </div>
++  )
++}
++
++export default function GuidanceCard({ level, location, building, floor, assemblyArea, extinguishers, isResponder, onRespond }: GuidanceProps) {
++  const isRed = level === 'Red'
++  const color = isRed ? '#ef4444' : '#f97316'
++  const [tab, setTab] = useState<'evacuate' | 'respond'>(isResponder ? 'respond' : 'evacuate')
++  const [open, setOpen] = useState(true)
++  useEffect(() => { if (isResponder) setTab('respond') }, [isResponder])
++
++  // Same-floor extinguishers first; only Active ones are safe to send people to.
++  const byFloor = (a: any, b: any) => Number(b.floor === floor) - Number(a.floor === floor)
++  const usable = extinguishers.filter(e => (e.status || 'Active') === 'Active').sort(byFloor)
++  const unusable = extinguishers.filter(e => (e.status || 'Active') !== 'Active')
++  const gather = assemblyArea ? `the ${assemblyArea} assembly area` : 'the nearest assembly area / open ground away from the building'
++
++  const evacSteps: { t: string; d?: string }[] = isRed ? [
++    { t: 'Leave now', d: 'walk briskly, do not run, do not push. Leave your belongings.' },
++    { t: 'Alert people around you', d: 'shout "FIRE" as you go. Help anyone who needs assistance only if it is safe; otherwise tell Security/DRRM exactly where they are.' },
++    { t: 'Check doors before opening', d: 'touch with the back of your hand. If hot, do not open it — use another exit.' },
++    { t: 'Use the stairs, never the elevator', d: floor && floor !== '1F' ? `you are being alerted from ${floor}; take the nearest stairwell down.` : 'go straight to the nearest exit.' },
++    { t: 'Stay low in smoke', d: 'cover your nose and mouth with cloth and keep close to the floor.' },
++    { t: 'Close doors behind you', d: 'do not lock them. This slows the spread of fire and smoke.' },
++    { t: `Go to ${gather}`, d: 'stay there. Do not go back inside for any reason.' },
++    { t: 'Be counted', d: 'report to your teacher/adviser or DRRM personnel. Tell them right away if anyone is missing.' },
++  ] : [
++    { t: 'Stay calm and stay alert', d: 'a possible small fire was detected. Responders are being asked to assist.' },
++    { t: `If you are in or near ${building || 'the affected area'}`, d: 'leave the room, move away from the smoke, and keep corridors and stairs clear.' },
++    { t: 'If you are elsewhere', d: 'continue what you are doing, stay away from the affected area, and keep this page open.' },
++    { t: 'Be ready to evacuate', d: `if this becomes a RED alert, follow the evacuation steps and head to ${gather}.` },
++    { t: 'Follow Security/DRRM instructions', d: 'they will tell you if the area needs to be cleared.' },
++  ]
++
++  return (
++    <div role="alert" style={{ ...card, border: `1px solid ${color}55` }}>
++      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
++        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: `${color}14`,
++                 border: 'none', borderBottom: open ? `1px solid ${color}33` : 'none', color: 'var(--text)', cursor: 'pointer',
++                 fontFamily: 'var(--font)', textAlign: 'left' }}>
++        <span style={{ fontSize: '1.1rem' }}>{isRed ? '🔴' : '🟠'}</span>
++        <span style={{ flex: 1 }}>
++          <span style={{ display: 'block', fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color }}>
++            {isRed ? 'RED ALERT — EVACUATE' : 'ORANGE ALERT — POSSIBLE FIRE'}
++          </span>
++          <span style={{ display: 'block', fontSize: '.85rem', fontWeight: 600 }}>What to do now · 📍 {location}</span>
++        </span>
++        <span style={{ color: 'var(--muted)', fontSize: '.75rem' }}>{open ? 'Hide ▲' : 'Show ▼'}</span>
++      </button>
++
++      {open && (
++        <div style={{ padding: '14px 18px 18px' }}>
++          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
++            {([['evacuate', '🚶 Evacuating'], ['respond', '🧯 Responding']] as const).map(([id, label]) => (
++              <button key={id} onClick={() => setTab(id)}
++                style={{ padding: '6px 14px', borderRadius: 20, fontSize: '.75rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)',
++                         background: tab === id ? `${color}22` : 'transparent', color: tab === id ? color : 'var(--muted)',
++                         border: `1px solid ${tab === id ? color : 'var(--border)'}` }}>
++                {label}
++              </button>
++            ))}
++          </div>
++
++          {tab === 'evacuate' && (
++            <>
++              <Steps items={evacSteps} color={color} />
++              {isRed && (
++                <Note color={color}>
++                  <strong>Trapped?</strong> Stay in the room, close the door, seal the gaps with cloth, signal from a window, and call <strong>911</strong> with your exact location.
++                </Note>
++              )}
++            </>
++          )}
++
++          {tab === 'respond' && (
++            <>
++              {isRed ? (
++                <>
++                  <Note color={color}>
++                    <strong>Critical fire — do not try to put it out.</strong> Responders help people leave, keep everyone out of the building, and hand over to the Bureau of Fire Protection (BFP).
++                  </Note>
++                  <div style={{ height: 12 }} />
++                  <Steps color={color} items={[
++                    { t: 'Help clear the area', d: 'direct people to the exits and stairs. Only check rooms that are not filled with smoke. Never enter smoke or heat.' },
++                    { t: 'Assist those who need help', d: 'injured, persons with disabilities, anyone unable to use the stairs — stay with them and report their location.' },
++                    { t: `Move everyone to ${gather}`, d: 'keep the crowd well away from the building and clear of the fire-truck access.' },
++                    { t: 'Do a headcount', d: 'compare against class lists/attendance and report anyone unaccounted for.' },
++                    { t: 'Brief the BFP on arrival', d: 'exact location, what is burning, anyone missing, and hazards (lab chemicals, LPG, electrical rooms).' },
++                    { t: 'Do not re-enter', d: 'wait for the BFP to declare the building safe.' },
++                    { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
++                  ]} />
++                </>
++              ) : (
++                <>
++                  <Steps color={color} items={[
++                    { t: 'Tell Security/DRRM you are responding', d: `and confirm the location: ${location}.` },
++                    { t: 'Check the fire from a safe distance', d: 'if it is bigger than a small wastebasket, or spreading, do not fight it — treat it as a RED alert and evacuate people.' },
++                    { t: 'Fight the fire ONLY if all of these are true', d: 'you are trained; the fire is small and contained; you have a clear exit behind you; there is little smoke; and you have the right extinguisher.' },
++                    { t: 'Use PASS', d: 'Pull the pin · Aim at the base of the fire · Squeeze the handle · Sweep side to side. Stay about 2–3 m away.' },
++                    { t: 'Back out if it is not working', d: 'fire growing, heavy smoke, or the extinguisher runs empty. Close the door and evacuate.' },
++                    { t: 'Stay until it is confirmed out', d: 'watch for re-ignition and do not leave it unattended.' },
++                    { t: 'Report the extinguisher you used', d: 'tell an Admin so it can be marked "Maintenance" and refilled.' },
++                    { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
++                  ]} />
++
++                  <div style={{ marginTop: 16, fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
++                    🧯 Extinguishers in {building || 'this building'}
++                  </div>
++                  {usable.length > 0 ? (
++                    <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
++                      {usable.map(e => {
++                        const use = EXT_USE[e.equipment_type] || EXT_USE.ABC
++                        return (
++                          <div key={e.equipment_id} style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--panel2)', border: '1px solid var(--border)', fontSize: '.76rem' }}>
++                            <div style={{ fontWeight: 600 }}>
++                              {e.equipment_type} · {e.floor} — {e.location_description}
++                              {e.floor === floor && <span style={{ marginLeft: 8, color: '#22c55e', fontSize: '.68rem' }}>● same floor as the alert</span>}
++                            </div>
++                            <div style={{ color: 'var(--muted)', marginTop: 2 }}>Use on: {use.good}. Do not use on: {use.avoid}.</div>
++                          </div>
++                        )
++                      })}
++                    </div>
++                  ) : (
++                    <Note color="#ef4444">
++                      <strong>No working extinguisher is registered for this building.</strong> Do not fight the fire — help people evacuate and wait for the BFP.
++                    </Note>
++                  )}
++                  {unusable.length > 0 && (
++                    <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>
++                      ⚠ Do not rely on: {unusable.map(e => `${e.equipment_type} at ${e.floor} — ${e.location_description} (${e.status})`).join('; ')}.
++                    </div>
++                  )}
++                </>
++              )}
++            </>
++          )}
++
++          {!isResponder && onRespond && (
++            <div style={{ marginTop: 14 }}>
++              <button onClick={onRespond}
++                style={{ padding: '8px 16px', borderRadius: 6, border: `1px solid ${color}`, background: 'transparent', color, fontSize: '.78rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
++                I can respond or assist
++              </button>
++            </div>
++          )}
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/app/components/MapEditor.tsx b/app/components/MapEditor.tsx
+index 8685e74..6c9e02b 100644
+--- a/app/components/MapEditor.tsx
++++ b/app/components/MapEditor.tsx
+@@ -200,16 +200,30 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
+           )
+           if (!building) return null
+ 
+-          // Equipment is assigned to a building, not a room. Spread markers
+-          // around that building's upper-right corner so they never overlap.
+-          const buildingItems = equipment.filter(e => e.building === item.building)
+-          const positionInBuilding = buildingItems.findIndex(e =>
+-            String(e.equipment_id) === String(item.equipment_id)
+-          )
+-          const column = positionInBuilding % 3
+-          const row = Math.floor(positionInBuilding / 3)
+-          const markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
+-          const markerY = clamp(building.y + 18 + row * 28, building.y + 12, building.y + building.height - 12)
++          // Locations chosen in the dashboard read "Near <room name>". If that
++          // room exists on the map, pin the extinguisher to the room's corner
++          // so it shows up exactly where it was assigned.
++          const wanted = /^near\s+(.+)$/i.exec(String(item.location_description || '').trim())?.[1]?.trim().toLowerCase()
++          const room = wanted
++            ? display.find(o => o.object_type === 'room' && o.parent_name === item.building &&
++                o.name.trim().toLowerCase() === wanted && (!item.floor || !o.floor || o.floor === item.floor))
++            : undefined
++
++          let markerX: number
++          let markerY: number
++          if (room) {
++            markerX = clamp(room.x + room.width - 12, room.x + 12, room.x + room.width)
++            markerY = clamp(room.y + room.height - 12, room.y + 12, room.y + room.height)
++          } else {
++            // Hallway / stairs / older records: spread around the building's
++            // upper-right corner so markers never overlap.
++            const generic = equipment.filter(e => e.building === item.building)
++            const positionInBuilding = generic.findIndex(e => String(e.equipment_id) === String(item.equipment_id))
++            const column = positionInBuilding % 3
++            const rowIdx = Math.floor(positionInBuilding / 3)
++            markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
++            markerY = clamp(building.y + 18 + rowIdx * 28, building.y + 12, building.y + building.height - 12)
++          }
+           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
+ 
+           return (
+@@ -230,11 +244,12 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
+                 display: 'grid',
+                 placeItems: 'center',
+                 fontSize: 13,
+-                pointerEvents: 'none',
++                // hoverable on the live map; click-through in the editor so dragging still works
++                pointerEvents: isEditor ? 'none' : 'auto',
+                 boxShadow: `0 0 0 3px ${statusColor}33`,
+               }}
+             >
+-                          🧯
++              🧯
+             </div>
+           )
+         })}
+diff --git a/app/dashboard/page.tsx b/app/dashboard/page.tsx
+index c125517..30dc778 100644
+--- a/app/dashboard/page.tsx
++++ b/app/dashboard/page.tsx
+@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
+ import PushSubscribe from '../components/PushSubscribe'
+ import { createPortal } from 'react-dom'
+ import MapEditor, { MapCanvas, MapObject, findNearestSafeZone } from '../components/MapEditor'
++import GuidanceCard from '../components/Guidance'
+ 
+ const SESSION_KEY     = 'ag_user'
+ 
+@@ -209,6 +210,29 @@ const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; lab
+   ],
+ }
+ 
++// Options for the extinguisher "Location" dropdown of a building.
++// Rooms on the map become "Near <room>"; each floor also gets generic spots.
++// Falls back to the original hard-coded list when the map has no rooms yet, and
++// keeps a legacy value selectable while editing an older record.
++function buildExtOptions(building:string, mapObjects:MapObject[], currentKey?:string): { floor:string; desc:string; label:string }[] {
++  const rooms=mapObjects.filter(o=>o.object_type==='room'&&o.parent_name===building&&o.name.trim()!==''&&o.name.trim().toLowerCase()!=='room')
++  const opts:{ floor:string; desc:string; label:string }[]=[]
++  if(rooms.length){
++    const floors=Array.from(new Set(rooms.map(r=>r.floor||'1F'))).sort()
++    for(const f of floors){
++      for(const spot of ['Hallway','Near staircase','Near main exit']) opts.push({floor:f,desc:spot,label:`${f} — ${spot}`})
++      rooms.filter(r=>(r.floor||'1F')===f).forEach(r=>opts.push({floor:f,desc:`Near ${r.name}`,label:`${f} — Near ${r.name}`}))
++    }
++  } else {
++    opts.push(...(EXT_LOCATIONS_BY_BUILDING[building]||[]))
++  }
++  if(currentKey&&!opts.some(o=>`${o.floor}|${o.desc}`===currentKey)){
++    const [floor,...rest]=currentKey.split('|'); const desc=rest.join('|')
++    if(desc) opts.unshift({floor,desc,label:`${floor} — ${desc}`})
++  }
++  return opts
++}
++
+ // ── UI HELPERS ────────────────────────────────────────────────
+ const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px',justifySelf:'start',width:'fit-content'}
+ 
+@@ -694,11 +718,12 @@ useEffect(() => {
+   if(!stored){router.push('/login');return}
+   const sessionUser=JSON.parse(stored)
+   setUser(sessionUser)
+-    loadDevices();loadIncidents();loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
++    loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
+     const r = setInterval(() => {
+   loadDevices()
+   loadIncidents(incFilterRef.current)
++  loadEquipment()
+   loadReports(sessionUser.user_id, sessionUser.user_type === 'Admin')
+ 
+   // Map Editor controls its own data while the admin is dragging/saving.
+@@ -796,8 +821,9 @@ if(v==='mapEditor'){
+ 
+   // ── OCCUPANCY: check if a location already has equipment ─────
+   function checkExtOccupied(building:string, floor:string, desc:string, excludeId?:number): string|null {
+-    const existing=equipment.find(e=>e.building===building&&e.floor===floor&&e.location_description===desc&&e.equipment_id!==excludeId)
+-    if(existing) return `${floor} — ${desc} in ${building} already has a ${existing.equipment_type} extinguisher.`
++    const norm=(v:any)=>String(v??'').trim().toLowerCase()
++    const existing=equipment.find(e=>norm(e.building)===norm(building)&&norm(e.floor)===norm(floor)&&norm(e.location_description)===norm(desc)&&String(e.equipment_id)!==String(excludeId??''))
++    if(existing) return `${floor} — ${desc} in ${building} already has a ${existing.equipment_type} extinguisher (ID #${existing.equipment_id}). Pick another location or edit that one.`
+     return null
+   }
+ 
+@@ -907,10 +933,11 @@ setModal(null);loadUsers()
+     const errs:Record<string,string>={}
+     if(!form.equipment_type) errs.equipment_type='Type is required.'
+     if(!form.building) errs.building='Building is required.'
+-    if(!form.extKey) errs.extKey='Location is required.'
++    const extKey=form.extKey||(currentExtOptions[0]?`${currentExtOptions[0].floor}|${currentExtOptions[0].desc}`:'')
++    if(!extKey) errs.extKey='Location is required.'
+ 
+     if(!Object.keys(errs).length){
+-      const [floor, ...descParts] = (form.extKey||'').split('|')
++      const [floor, ...descParts] = extKey.split('|')
+       const desc = descParts.join('|')
+       const occ=checkExtOccupied(form.building, floor, desc, editId||undefined)
+       if(occ) errs.extKey=occ
+@@ -919,7 +946,7 @@ setModal(null);loadUsers()
+     if(Object.keys(errs).length){setFormErrors(errs);return}
+     setFormErrors({})
+ 
+-    const [floor, ...descParts] = (form.extKey||'').split('|')
++    const [floor, ...descParts] = extKey.split('|')
+     const desc = descParts.join('|')
+ 
+     const payload={
+@@ -929,10 +956,11 @@ setModal(null);loadUsers()
+       floor,
+       location_description: desc,
+       status: form.status||'Active',
++      last_inspection: form.last_inspection||null,
+     }
+     const d=await api('/api/equipment', editId?'PUT':'POST', payload)
+     if(!d.success){showToast('error','Error',d.message);return}
+-    showToast('success', editId?'Equipment Updated':'Equipment Added','Saved.')
++    showToast('success', editId?'Equipment Updated':'Equipment Added',`${form.equipment_type} · ${floor} — ${desc} (${form.building}). It now appears on the Campus Map.`)
+     setModal(null);loadEquipment()
+   }
+ 
+@@ -978,7 +1006,7 @@ setModal(null);loadUsers()
+     loadReports(user.user_id, isAdmin),
+   ])
+   setView('reports')
+-  showToast('success', 'Response Accepted', 'Please complete your incident report.')
++  showToast('success', 'Response Accepted', 'Your responder steps are shown at the top of the page. Please complete your incident report when done.')
+ }
+ function declineResponse() {
+   const d = respDeviceRef.current
+@@ -1102,7 +1130,11 @@ o.name.trim() !== '')
+     room: o.name,
+     label: `${o.floor || '1F'} — ${o.name}`,
+   }))
+-  const currentExtOptions  = EXT_LOCATIONS_BY_BUILDING[form.building] || []
++  // Extinguisher locations come from the live map (rooms in the chosen building),
++  // so new rooms/buildings added in the Map Editor become assignable automatically.
++  const mapBuildingNames = mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='').map(o=>o.name)
++  const extBuildingOptions = mapBuildingNames.length?mapBuildingNames:BUILDINGS_LIST
++  const currentExtOptions = buildExtOptions(form.building, mapObjects, form.extKey)
+ 
+   return (
+     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
+@@ -1227,6 +1259,11 @@ o.name.trim() !== '')
+                   <div style={{fontSize:'.78rem',color:'var(--muted)'}}>📍 {respStatus.location}</div>
+                 </div>
+                 <div style={{padding:24}}>
++                  <div style={{marginBottom:14,padding:'10px 12px',borderRadius:8,fontSize:'.76rem',lineHeight:1.5,background:respStatus.threat_level==='Red'?'rgba(239,68,68,.08)':'rgba(249,115,22,.08)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.3)':'rgba(249,115,22,.3)'}`}}>
++                    {respStatus.threat_level==='Red'
++                      ? <><strong>Critical fire.</strong> Responders help people evacuate and account for everyone at the assembly area. Do not try to put the fire out.</>
++                      : <><strong>Only respond if it is safe and you are able.</strong> Fight a fire only if it is small, you have a clear exit behind you and the right extinguisher. Otherwise help people leave. Full steps appear once you accept.</>}
++                  </div>
+                   <div style={{marginBottom:18}}><ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/></div>
+                   <div style={{display:'flex',gap:10}}>
+                     <button onClick={declineResponse} style={{flex:1,padding:'11px 16px',background:'transparent',border:'1px solid var(--border)',borderRadius:8,color:'var(--muted)',fontSize:'.85rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Unable to Respond</button>
+@@ -1237,6 +1274,20 @@ o.name.trim() !== '')
+             </div>
+           )}
+ 
++          {activeEvacInc&&activeEvacDevice&&(
++            <GuidanceCard
++              key={activeEvacInc.incident_id}
++              level={activeEvacInc.threat_level==='Red'?'Red':'Orange'}
++              location={activeEvacInc.location}
++              building={activeEvacDevice.building}
++              floor={activeEvacDevice.floor}
++              assemblyArea={activeSafeZone?.name||null}
++              extinguishers={equipment.filter(e=>e.building===activeEvacDevice.building)}
++              isResponder={myResponses.has(activeEvacDevice.device_id)}
++              onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
++            />
++          )}
++
+           {/* ══ DASHBOARD ══ */}
+           {view==='dashboard'&&(
+             <div>
+@@ -1328,16 +1379,8 @@ o.name.trim() !== '')
+               <div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+                 <div style={{fontSize:'.85rem',color:'var(--muted)'}}>All markers reflect live database data. Hover for details.</div>
+                                 {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
+-                {activeSteps&&(
+-                  <div style={{background:'rgba(239,68,68,.06)',border:'1px solid rgba(239,68,68,.25)',borderRadius:8,padding:'10px 16px',fontSize:'.78rem',color:'var(--text)'}}>
+-                    <strong style={{color:'var(--red)'}}>Evacuation Directions:</strong>
+-                    <ol style={{margin:'6px 0 0',paddingLeft:18}}>
+-                      {activeSteps.map((s,idx)=><li key={idx} style={{marginBottom:2}}>{s}</li>)}
+-                    </ol>
+-                  </div>
+-                )}
+               </div>
+-              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} />
++              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} equipment={equipment} />
+               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
+                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
+@@ -1591,10 +1634,10 @@ o.name.trim() !== ''
+               <div style={{display:'flex',marginBottom:16}}>
+                 <div style={{flex:1}}/>
+                 <button onClick={()=>{
+-                  const defaultBuilding='Medina Lacson Building'
+-                  const defaultExt=EXT_LOCATIONS_BY_BUILDING[defaultBuilding][0]
++                  const defaultBuilding=extBuildingOptions[0]
++                  const defaultExt=buildExtOptions(defaultBuilding,mapObjects)[0]
+                   setEditId(null)
+-                  setForm({equipment_type:'ABC',building:defaultBuilding,extKey:`${defaultExt.floor}|${defaultExt.desc}`,status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
++                  setForm({equipment_type:'ABC',building:defaultBuilding,extKey:defaultExt?`${defaultExt.floor}|${defaultExt.desc}`:'',status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
+                   setFormErrors({})
+                   setModal('equipment')
+                 }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Extinguisher</button>
+@@ -1825,15 +1868,15 @@ setForm({
+                 </div>
+                 <div style={{marginBottom:14}}>
+                   {lbl('Building')}
+-                  <select value={form.building||'Medina Lacson Building'}
++                  <select value={form.building||extBuildingOptions[0]}
+                     onChange={e=>{
+                       const b=e.target.value
+-                      const firstExt=EXT_LOCATIONS_BY_BUILDING[b]?.[0]
++                      const firstExt=buildExtOptions(b,mapObjects)[0]
+                       setForm({...form, building:b, extKey: firstExt?`${firstExt.floor}|${firstExt.desc}`:''})
+                       setFormErrors({...formErrors, building:'', extKey:''})
+                     }}
+                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+-                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
++                    {extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
+                   </select>
+                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
+                 </div>

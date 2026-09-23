@@ -200,16 +200,30 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
           )
           if (!building) return null
 
-          // Equipment is assigned to a building, not a room. Spread markers
-          // around that building's upper-right corner so they never overlap.
-          const buildingItems = equipment.filter(e => e.building === item.building)
-          const positionInBuilding = buildingItems.findIndex(e =>
-            String(e.equipment_id) === String(item.equipment_id)
-          )
-          const column = positionInBuilding % 3
-          const row = Math.floor(positionInBuilding / 3)
-          const markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
-          const markerY = clamp(building.y + 18 + row * 28, building.y + 12, building.y + building.height - 12)
+          // Locations chosen in the dashboard read "Near <room name>". If that
+          // room exists on the map, pin the extinguisher to the room's corner
+          // so it shows up exactly where it was assigned.
+          const wanted = /^near\s+(.+)$/i.exec(String(item.location_description || '').trim())?.[1]?.trim().toLowerCase()
+          const room = wanted
+            ? display.find(o => o.object_type === 'room' && o.parent_name === item.building &&
+                o.name.trim().toLowerCase() === wanted && (!item.floor || !o.floor || o.floor === item.floor))
+            : undefined
+
+          let markerX: number
+          let markerY: number
+          if (room) {
+            markerX = clamp(room.x + room.width - 12, room.x + 12, room.x + room.width)
+            markerY = clamp(room.y + room.height - 12, room.y + 12, room.y + room.height)
+          } else {
+            // Hallway / stairs / older records: spread around the building's
+            // upper-right corner so markers never overlap.
+            const generic = equipment.filter(e => e.building === item.building)
+            const positionInBuilding = generic.findIndex(e => String(e.equipment_id) === String(item.equipment_id))
+            const column = positionInBuilding % 3
+            const rowIdx = Math.floor(positionInBuilding / 3)
+            markerX = clamp(building.x + building.width - 18 - column * 28, building.x + 12, building.x + building.width - 12)
+            markerY = clamp(building.y + 18 + rowIdx * 28, building.y + 12, building.y + building.height - 12)
+          }
           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
 
           return (
@@ -230,11 +244,12 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
                 display: 'grid',
                 placeItems: 'center',
                 fontSize: 13,
-                pointerEvents: 'none',
+                // hoverable on the live map; click-through in the editor so dragging still works
+                pointerEvents: isEditor ? 'none' : 'auto',
                 boxShadow: `0 0 0 3px ${statusColor}33`,
               }}
             >
-                          🧯
+              🧯
             </div>
           )
         })}

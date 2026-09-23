@@ -9,8 +9,8 @@ export const revalidate = 0;
 const LEVEL_RANK: Record<string, number> = { Gray: 0, Yellow: 1, Orange: 2, Red: 3 };
 const SEVERITY_MESSAGE: Record<string, string> = {
   Yellow: 'Low-level smoke or vapor detected. Please stay alert.',
-  Orange: 'High smoke level detected. Possible fire — assistance may be needed.',
-  Red: 'Critical smoke level detected. Fire emergency — follow evacuation procedures.',
+  Orange: 'High smoke level detected. Possible fire — leave the affected area, stay alert, and open AeroGuard to see if you can assist.',
+  Red: 'Critical smoke level detected. Fire emergency — evacuate now using the stairs (not elevators), go to your assembly area, and do not go back inside.',
 }
 
 async function notifyEscalation(device: any, threat_level: string) {

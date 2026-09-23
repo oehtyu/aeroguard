@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
 import MapEditor, { MapCanvas, MapObject, findNearestSafeZone } from '../components/MapEditor'
+import GuidanceCard from '../components/Guidance'
 
 const SESSION_KEY     = 'ag_user'
 
@@ -207,6 +208,29 @@ const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; lab
     {floor:'2F', desc:'Hallway between Rooms 201-202',      label:'2F — Hallway between Rooms 201-202'},
     {floor:'2F', desc:'Near nursing lab Room 203',          label:'2F — Near nursing lab Room 203'},
   ],
+}
+
+// Options for the extinguisher "Location" dropdown of a building.
+// Rooms on the map become "Near <room>"; each floor also gets generic spots.
+// Falls back to the original hard-coded list when the map has no rooms yet, and
+// keeps a legacy value selectable while editing an older record.
+function buildExtOptions(building:string, mapObjects:MapObject[], currentKey?:string): { floor:string; desc:string; label:string }[] {
+  const rooms=mapObjects.filter(o=>o.object_type==='room'&&o.parent_name===building&&o.name.trim()!==''&&o.name.trim().toLowerCase()!=='room')
+  const opts:{ floor:string; desc:string; label:string }[]=[]
+  if(rooms.length){
+    const floors=Array.from(new Set(rooms.map(r=>r.floor||'1F'))).sort()
+    for(const f of floors){
+      for(const spot of ['Hallway','Near staircase','Near main exit']) opts.push({floor:f,desc:spot,label:`${f} — ${spot}`})
+      rooms.filter(r=>(r.floor||'1F')===f).forEach(r=>opts.push({floor:f,desc:`Near ${r.name}`,label:`${f} — Near ${r.name}`}))
+    }
+  } else {
+    opts.push(...(EXT_LOCATIONS_BY_BUILDING[building]||[]))
+  }
+  if(currentKey&&!opts.some(o=>`${o.floor}|${o.desc}`===currentKey)){
+    const [floor,...rest]=currentKey.split('|'); const desc=rest.join('|')
+    if(desc) opts.unshift({floor,desc,label:`${floor} — ${desc}`})
+  }
+  return opts
 }
 
 // ── UI HELPERS ────────────────────────────────────────────────
@@ -694,11 +718,12 @@ useEffect(() => {
   if(!stored){router.push('/login');return}
   const sessionUser=JSON.parse(stored)
   setUser(sessionUser)
-    loadDevices();loadIncidents();loadMapObjects();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+    loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
     const r = setInterval(() => {
   loadDevices()
   loadIncidents(incFilterRef.current)
+  loadEquipment()
   loadReports(sessionUser.user_id, sessionUser.user_type === 'Admin')
 
   // Map Editor controls its own data while the admin is dragging/saving.
@@ -796,8 +821,9 @@ if(v==='mapEditor'){
 
   // ── OCCUPANCY: check if a location already has equipment ─────
   function checkExtOccupied(building:string, floor:string, desc:string, excludeId?:number): string|null {
-    const existing=equipment.find(e=>e.building===building&&e.floor===floor&&e.location_description===desc&&e.equipment_id!==excludeId)
-    if(existing) return `${floor} — ${desc} in ${building} already has a ${existing.equipment_type} extinguisher.`
+    const norm=(v:any)=>String(v??'').trim().toLowerCase()
+    const existing=equipment.find(e=>norm(e.building)===norm(building)&&norm(e.floor)===norm(floor)&&norm(e.location_description)===norm(desc)&&String(e.equipment_id)!==String(excludeId??''))
+    if(existing) return `${floor} — ${desc} in ${building} already has a ${existing.equipment_type} extinguisher (ID #${existing.equipment_id}). Pick another location or edit that one.`
     return null
   }
 
@@ -907,10 +933,11 @@ setModal(null);loadUsers()
     const errs:Record<string,string>={}
     if(!form.equipment_type) errs.equipment_type='Type is required.'
     if(!form.building) errs.building='Building is required.'
-    if(!form.extKey) errs.extKey='Location is required.'
+    const extKey=form.extKey||(currentExtOptions[0]?`${currentExtOptions[0].floor}|${currentExtOptions[0].desc}`:'')
+    if(!extKey) errs.extKey='Location is required.'
 
     if(!Object.keys(errs).length){
-      const [floor, ...descParts] = (form.extKey||'').split('|')
+      const [floor, ...descParts] = extKey.split('|')
       const desc = descParts.join('|')
       const occ=checkExtOccupied(form.building, floor, desc, editId||undefined)
       if(occ) errs.extKey=occ
@@ -919,7 +946,7 @@ setModal(null);loadUsers()
     if(Object.keys(errs).length){setFormErrors(errs);return}
     setFormErrors({})
 
-    const [floor, ...descParts] = (form.extKey||'').split('|')
+    const [floor, ...descParts] = extKey.split('|')
     const desc = descParts.join('|')
 
     const payload={
@@ -929,10 +956,11 @@ setModal(null);loadUsers()
       floor,
       location_description: desc,
       status: form.status||'Active',
+      last_inspection: form.last_inspection||null,
     }
     const d=await api('/api/equipment', editId?'PUT':'POST', payload)
     if(!d.success){showToast('error','Error',d.message);return}
-    showToast('success', editId?'Equipment Updated':'Equipment Added','Saved.')
+    showToast('success', editId?'Equipment Updated':'Equipment Added',`${form.equipment_type} · ${floor} — ${desc} (${form.building}). It now appears on the Campus Map.`)
     setModal(null);loadEquipment()
   }
 
@@ -978,7 +1006,7 @@ setModal(null);loadUsers()
     loadReports(user.user_id, isAdmin),
   ])
   setView('reports')
-  showToast('success', 'Response Accepted', 'Please complete your incident report.')
+  showToast('success', 'Response Accepted', 'Your responder steps are shown at the top of the page. Please complete your incident report when done.')
 }
 function declineResponse() {
   const d = respDeviceRef.current
@@ -1102,7 +1130,11 @@ o.name.trim() !== '')
     room: o.name,
     label: `${o.floor || '1F'} — ${o.name}`,
   }))
-  const currentExtOptions  = EXT_LOCATIONS_BY_BUILDING[form.building] || []
+  // Extinguisher locations come from the live map (rooms in the chosen building),
+  // so new rooms/buildings added in the Map Editor become assignable automatically.
+  const mapBuildingNames = mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='').map(o=>o.name)
+  const extBuildingOptions = mapBuildingNames.length?mapBuildingNames:BUILDINGS_LIST
+  const currentExtOptions = buildExtOptions(form.building, mapObjects, form.extKey)
 
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
@@ -1227,6 +1259,11 @@ o.name.trim() !== '')
                   <div style={{fontSize:'.78rem',color:'var(--muted)'}}>📍 {respStatus.location}</div>
                 </div>
                 <div style={{padding:24}}>
+                  <div style={{marginBottom:14,padding:'10px 12px',borderRadius:8,fontSize:'.76rem',lineHeight:1.5,background:respStatus.threat_level==='Red'?'rgba(239,68,68,.08)':'rgba(249,115,22,.08)',border:`1px solid ${respStatus.threat_level==='Red'?'rgba(239,68,68,.3)':'rgba(249,115,22,.3)'}`}}>
+                    {respStatus.threat_level==='Red'
+                      ? <><strong>Critical fire.</strong> Responders help people evacuate and account for everyone at the assembly area. Do not try to put the fire out.</>
+                      : <><strong>Only respond if it is safe and you are able.</strong> Fight a fire only if it is small, you have a clear exit behind you and the right extinguisher. Otherwise help people leave. Full steps appear once you accept.</>}
+                  </div>
                   <div style={{marginBottom:18}}><ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/></div>
                   <div style={{display:'flex',gap:10}}>
                     <button onClick={declineResponse} style={{flex:1,padding:'11px 16px',background:'transparent',border:'1px solid var(--border)',borderRadius:8,color:'var(--muted)',fontSize:'.85rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Unable to Respond</button>
@@ -1235,6 +1272,20 @@ o.name.trim() !== '')
                 </div>
               </div>
             </div>
+          )}
+
+          {activeEvacInc&&activeEvacDevice&&(
+            <GuidanceCard
+              key={activeEvacInc.incident_id}
+              level={activeEvacInc.threat_level==='Red'?'Red':'Orange'}
+              location={activeEvacInc.location}
+              building={activeEvacDevice.building}
+              floor={activeEvacDevice.floor}
+              assemblyArea={activeSafeZone?.name||null}
+              extinguishers={equipment.filter(e=>e.building===activeEvacDevice.building)}
+              isResponder={myResponses.has(activeEvacDevice.device_id)}
+              onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
+            />
           )}
 
           {/* ══ DASHBOARD ══ */}
@@ -1328,16 +1379,8 @@ o.name.trim() !== '')
               <div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
                 <div style={{fontSize:'.85rem',color:'var(--muted)'}}>All markers reflect live database data. Hover for details.</div>
                                 {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
-                {activeSteps&&(
-                  <div style={{background:'rgba(239,68,68,.06)',border:'1px solid rgba(239,68,68,.25)',borderRadius:8,padding:'10px 16px',fontSize:'.78rem',color:'var(--text)'}}>
-                    <strong style={{color:'var(--red)'}}>Evacuation Directions:</strong>
-                    <ol style={{margin:'6px 0 0',paddingLeft:18}}>
-                      {activeSteps.map((s,idx)=><li key={idx} style={{marginBottom:2}}>{s}</li>)}
-                    </ol>
-                  </div>
-                )}
               </div>
-              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} />
+              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} equipment={equipment} />
               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
@@ -1591,10 +1634,10 @@ o.name.trim() !== ''
               <div style={{display:'flex',marginBottom:16}}>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding='Medina Lacson Building'
-                  const defaultExt=EXT_LOCATIONS_BY_BUILDING[defaultBuilding][0]
+                  const defaultBuilding=extBuildingOptions[0]
+                  const defaultExt=buildExtOptions(defaultBuilding,mapObjects)[0]
                   setEditId(null)
-                  setForm({equipment_type:'ABC',building:defaultBuilding,extKey:`${defaultExt.floor}|${defaultExt.desc}`,status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
+                  setForm({equipment_type:'ABC',building:defaultBuilding,extKey:defaultExt?`${defaultExt.floor}|${defaultExt.desc}`:'',status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
                   setFormErrors({})
                   setModal('equipment')
                 }} style={{padding:'8px 18px',background:'var(--accent2)',color:'white',border:'none',borderRadius:6,fontSize:'.8rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>+ Add Extinguisher</button>
@@ -1825,15 +1868,15 @@ setForm({
                 </div>
                 <div style={{marginBottom:14}}>
                   {lbl('Building')}
-                  <select value={form.building||'Medina Lacson Building'}
+                  <select value={form.building||extBuildingOptions[0]}
                     onChange={e=>{
                       const b=e.target.value
-                      const firstExt=EXT_LOCATIONS_BY_BUILDING[b]?.[0]
+                      const firstExt=buildExtOptions(b,mapObjects)[0]
                       setForm({...form, building:b, extKey: firstExt?`${firstExt.floor}|${firstExt.desc}`:''})
                       setFormErrors({...formErrors, building:'', extKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
+                    {extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
                   </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
