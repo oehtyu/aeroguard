@@ -79,9 +79,12 @@ type CanvasProps = {
   // underneath while positioning a large zone) instead of the compact pin
   // shown to everyone else, and pointer handlers are wired up at all.
   isEditor?: boolean
+  // Editor only: the building a new room is about to be added to. It glows so the admin
+  // can tell identically-named buildings apart.
+  highlightId?: number | null
 }
 
-export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp, onEquipmentPointerDown, equipmentOffsets = {}, isEditor = false }: CanvasProps) {
+export function MapCanvas({ objects, devices = [], incidents = [], equipment = [], selectedId, canvasRef, onPointerDown, onPointerMove, onPointerUp, onEquipmentPointerDown, equipmentOffsets = {}, isEditor = false, highlightId = null }: CanvasProps) {
   const display = objects.map(normaliseObject)
   const activeByDevice = new Map(incidents.filter(incident => !incident.resolved).map(incident => [incident.device_id, incident]))
   // Assembly Areas render as a compact pin outside the editor, so they
@@ -164,22 +167,28 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
         <style>{`
           .aeg-ping{position:absolute;left:50%;top:50%;width:100%;height:100%;box-sizing:border-box;border:2px solid #22c55e;border-radius:50%;pointer-events:none;opacity:0;transform:translate(-50%,-50%);animation:aegPing 1.8s ease-out infinite}
           @keyframes aegPing{0%{transform:translate(-50%,-50%) scale(1);opacity:.9}100%{transform:translate(-50%,-50%) scale(3.4);opacity:0}}
+          @keyframes aegTarget{0%,100%{box-shadow:0 0 0 3px rgba(250,204,21,.95),0 0 10px 2px rgba(250,204,21,.45)}50%{box-shadow:0 0 0 3px rgba(250,204,21,.95),0 0 26px 8px rgba(250,204,21,.85)}}
+          @media (prefers-reduced-motion:reduce){.aeg-target{animation:none!important}}
           @media (prefers-reduced-motion:reduce){.aeg-ping{animation:none;opacity:.55;transform:translate(-50%,-50%) scale(1.8)}}
         `}</style>
         {ordered.map(object => {
           const isRoom = object.object_type === 'room'
           const isSafeZone = object.object_type === 'safe_zone'
           const selected = object.map_object_id === selectedId
+          const isTarget = isEditor && object.object_type === 'building' && object.map_object_id === highlightId
           return (
-            <div key={object.map_object_id} onPointerDown={event => isEditor && onPointerDown?.(event, object)}
+            <div key={object.map_object_id} className={isTarget ? 'aeg-target' : undefined} onPointerDown={event => isEditor && onPointerDown?.(event, object)}
               style={{ position: 'absolute', left: object.x, top: object.y, width: object.width, height: object.height,
                 boxSizing: 'border-box',
                 background: object.object_type === 'wall' ? object.color : isRoom ? '#334155' : isSafeZone ? `${object.color}26` : `${object.color}99`,
-                border: `${selected ? 2 : 1}px solid ${selected ? '#00c2ff' : object.color}`,
+                border: isTarget ? '2px solid #facc15' : `${selected ? 2 : 1}px solid ${selected ? '#00c2ff' : object.color}`,
                 borderStyle: isSafeZone ? 'dashed' : 'solid',
-                borderRadius: object.object_type === 'wall' ? 1 : 4, zIndex: isRoom ? 3 : isSafeZone ? 0 : 1,
+                animation: isTarget ? 'aegTarget 1.2s ease-in-out infinite' : undefined,
+                boxShadow: isTarget ? '0 0 0 3px rgba(250,204,21,.95), 0 0 14px 3px rgba(250,204,21,.6)' : undefined,
+                borderRadius: object.object_type === 'wall' ? 1 : 4, zIndex: isRoom ? 3 : isSafeZone ? 0 : isTarget ? 2 : 1,
                 cursor: isEditor && onPointerDown ? 'grab' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isRoom ? 11 : 13, fontWeight: 700, overflow: 'visible' }}>
               <span style={{ pointerEvents: 'none', textAlign: 'center', padding: 3 }}>{object.name}</span>
+              {isTarget && <span style={{ position: 'absolute', left: 4, top: -9, zIndex: 4, pointerEvents: 'none', background: '#facc15', color: '#0d1421', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>NEW ROOM GOES HERE</span>}
               {selected && isEditor && onPointerDown && <div onPointerDown={event => { event.stopPropagation(); onPointerDown(event, object, true) }}
                 style={{ position: 'absolute', width: 11, height: 11, right: -6, bottom: -6, background: '#00c2ff', border: '2px solid #fff', borderRadius: 2, cursor: 'nwse-resize' }} />}
             </div>
@@ -322,6 +331,11 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
   }
   const selected = objects.find(object => object.map_object_id === selectedId) || null
   const buildings = objects.filter(object => object.object_type === 'building')
+  // The building a new room will be added to (falls back to the first building, exactly like the
+  // dropdown displays). Drives the glow on the map, the dropdown, and addObject().
+  const targetBuildingId = newType === 'room'
+    ? (buildings.find(b => b.map_object_id === newParent)?.map_object_id ?? buildings[0]?.map_object_id ?? null)
+    : null
 
   async function request(method: 'POST' | 'PUT' | 'DELETE', body: any) {
     const response = await fetch('/api/map', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, ...body }) })
@@ -343,6 +357,8 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
     canvas.setPointerCapture(event.pointerId)
     interaction.current = { id: object.map_object_id, resize, pin, startX: (event.clientX - rect.left) * CANVAS_W / rect.width, startY: (event.clientY - rect.top) * CANVAS_H / rect.height, item: normaliseObject(object), pointerId: event.pointerId, children: object.object_type === 'building' ? objectsRef.current.filter(item => item.parent_id === object.map_object_id).map(normaliseObject) : [] }
     setSelectedId(object.map_object_id)
+    // While adding a room, clicking a building on the map picks it as that room's building.
+    if (newType === 'room' && object.object_type === 'building' && !resize && !pin) setNewParent(object.map_object_id)
   }
   function move(event: PointerEvent<HTMLDivElement>) {
     const canvas = canvasRef.current
@@ -428,13 +444,35 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
     }).catch((error: any) => setMessage(error.message))
   }
 
+  // Where a new room first appears: inside its own building, in the first free spot, so it never
+  // lands somewhere else on the map (and never snaps back the first time it is dragged or resized).
+  function roomSpawnBox(parent: MapObject) {
+    const PAD = 6, GAP = 4
+    const width = Math.min(70, Math.max(20, parent.width - PAD * 2))
+    const height = Math.min(36, Math.max(20, parent.height - PAD * 2))
+    const siblings = objectsRef.current.filter(o => o.object_type === 'room' && o.parent_id === parent.map_object_id && (!newFloor || !o.floor || o.floor === newFloor))
+    const maxX = parent.x + parent.width - width, maxY = parent.y + parent.height - height
+    for (let y = parent.y + PAD; y <= maxY; y += 6) {
+      for (let x = parent.x + PAD; x <= maxX; x += 6) {
+        const clear = siblings.every(o => x + width + GAP <= o.x || o.x + o.width + GAP <= x || y + height + GAP <= o.y || o.y + o.height + GAP <= y)
+        if (clear) return { x, y, width, height }
+      }
+    }
+    // building is full: still inside it, just stacked on top-left
+    return { x: clamp(parent.x + PAD, parent.x, Math.max(parent.x, maxX)), y: clamp(parent.y + PAD, parent.y, Math.max(parent.y, maxY)), width, height }
+  }
   async function addObject() {
     try {
-      const parent = newType === 'room' ? (newParent || buildings[0]?.map_object_id) : null
-      const data: any = await request('POST', { object_type: newType, name: newName.trim() || LABELS[newType], color: COLORS[0], x: 80, y: 80, width: newType === 'wall' ? 220 : 140, height: newType === 'wall' ? 20 : 80, parent_id: parent, floor: newType === 'room' ? newFloor : null })
+      const isRoom = newType === 'room'
+      const parentObject = isRoom ? buildings.find(b => b.map_object_id === targetBuildingId) : null
+      if (isRoom && !parentObject) { setMessage('Add a building first, then add rooms to it.'); return }
+      const box = parentObject
+        ? roomSpawnBox(parentObject)
+        : { x: 80, y: 80, width: newType === 'wall' ? 220 : 140, height: newType === 'wall' ? 20 : 80 }
+      const data: any = await request('POST', { object_type: newType, name: newName.trim() || LABELS[newType], color: COLORS[0], ...box, parent_id: parentObject?.map_object_id ?? null, floor: isRoom ? newFloor : null })
       const item = normaliseObject(data.data)
       replaceObjects(current => [...current, item]); setSelectedId(item.map_object_id); setNewName('')
-      setMessage('Map item added. Drag it into place.'); void onChanged()
+      setMessage(isRoom ? `Room added inside ${parentObject!.name}. Drag it into place.` : 'Map item added. Drag it into place.'); void onChanged()
     } catch (error: any) { setMessage(error.message) }
   }
   function updateSelected(change: Partial<MapObject>) {
@@ -459,7 +497,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} equipmentOffsets={extOffsets} onEquipmentPointerDown={beginExt} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor />
+      <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} equipmentOffsets={extOffsets} onEquipmentPointerDown={beginExt} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor highlightId={targetBuildingId} />
       <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
         <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
         <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner. Drag each 🧯 extinguisher to its exact spot (dashed outline = not placed yet).</p>
@@ -471,7 +509,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
           </select>
           {newType === 'room' && <>
             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Building</label>
-            <select value={newParent} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
+            <select value={targetBuildingId ?? ''} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
               {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}
             </select>
             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Floor</label>
@@ -519,7 +557,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
           </div>
         </div>
 
-        {message && <div style={{ color: message.includes('Saved') ? 'var(--accent)' : 'var(--red)', fontSize: '.75rem', marginTop: 12 }}>{message}</div>}
+        {message && <div style={{ color: /Saved|added/.test(message) ? 'var(--accent)' : 'var(--red)', fontSize: '.75rem', marginTop: 12 }}>{message}</div>}
       </aside>
     </div>
   )
