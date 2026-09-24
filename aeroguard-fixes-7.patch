@@ -1,0 +1,214 @@
+diff --git a/app/components/Guidance.tsx b/app/components/Guidance.tsx
+index 8c12261..84c8b21 100644
+--- a/app/components/Guidance.tsx
++++ b/app/components/Guidance.tsx
+@@ -63,17 +63,11 @@ function Note({ children, color }: { children: React.ReactNode; color: string })
+   )
+ }
+ 
+-function where(n: NearestResult['usable'][number], buildingName?: string) {
+-  if (!n.inSameBuilding) return `in ${n.item.building}`
+-  if (n.floorDiff === 0) return 'same floor as the alert'
+-  const f = Math.abs(n.floorDiff)
+-  return `${f} floor${f > 1 ? 's' : ''} ${n.floorDiff < 0 ? 'below' : 'above'} the alert`
+-}
+-
+ // The 3 nearest working extinguishers, or a clear "none available" message.
+-function ExtinguisherPanel({ nearest, building, level, color }: { nearest: NearestResult; building?: string; level: 'Orange' | 'Red'; color: string }) {
+-  const { usable, unavailable } = nearest
+-  const list = unavailable.map(e => `${e.equipment_type} · ${e.floor} — ${e.location_description} (${e.status})`).join('; ')
++// Maintenance / Expired units never reach this component (they are filtered out upstream).
++function ExtinguisherPanel({ nearest, building, level }: { nearest: NearestResult; building?: string; level: 'Orange' | 'Red' }) {
++  const { usable, sameBuildingCount } = nearest
++  const name = building || 'this building'
+   return (
+     <div style={{ marginTop: 16 }}>
+       <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
+@@ -85,8 +79,15 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
+           <div style={{ marginTop: 6, fontSize: '.74rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+             {level === 'Red'
+               ? <>Critical fire: <strong>never walk toward the fire to fetch one.</strong> Use one only for a small fire that blocks your only way out — otherwise leave.</>
+-              : <>Only if you are trained, the fire is small (smaller than a wastebasket) and you have a clear exit behind you. They are numbered in green on the Campus Map.</>}
++              : <>Only if you are trained, the fire is small (smaller than a wastebasket) and you have a clear exit behind you. Nearest first — if the fire has already reached one, go to the next. They pulse green on the Campus Map.</>}
+           </div>
++          {sameBuildingCount < usable.length && (
++            <div style={{ marginTop: 6, fontSize: '.74rem', color: 'var(--muted)', lineHeight: 1.45 }}>
++              {sameBuildingCount === 0
++                ? <>None are available inside {name}, so these are the nearest in other buildings.</>
++                : <>Only {sameBuildingCount} available inside {name}, so the nearest in other buildings {usable.length - sameBuildingCount === 1 ? 'is' : 'are'} listed as backup.</>}
++            </div>
++          )}
+           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+             {usable.map(n => {
+               const use = EXT_USE[n.item.equipment_type] || EXT_USE.ABC
+@@ -96,7 +97,7 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
+                   <div>
+                     <div style={{ fontWeight: 600 }}>
+                       {n.item.equipment_type} · {n.item.floor} — {n.item.location_description}
+-                      <span style={{ marginLeft: 8, color: n.inSameBuilding && n.floorDiff === 0 ? '#22c55e' : 'var(--muted)', fontSize: '.68rem', fontWeight: 500 }}>● {where(n)}</span>
++                      {!n.inSameBuilding && <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: '.68rem', fontWeight: 500 }}>● in {n.item.building}</span>}
+                     </div>
+                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>Use on: {use.good}. Do not use on: {use.avoid}.</div>
+                   </div>
+@@ -104,14 +105,10 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
+               )
+             })}
+           </div>
+-          {unavailable.length > 0 && (
+-            <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>⚠ Not available, do not use: {list}.</div>
+-          )}
+         </>
+       ) : (
+         <Note color="#ef4444">
+-          <strong>No extinguishers are available around {building || 'this building'} right now.</strong>{' '}
+-          {unavailable.length > 0 ? <>The ones registered nearby are under maintenance or expired ({list}).</> : <>None are registered for this area.</>}{' '}
++          <strong>No extinguishers are available around {name} at the moment.</strong>{' '}
+           Follow the steps above, do not try to fight the fire, and wait for the Bureau of Fire Protection (BFP).
+         </Note>
+       )}
+@@ -182,7 +179,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
+                   <strong>Trapped?</strong> Stay in the room, close the door, seal the gaps with cloth, signal from a window, and call <strong>911</strong> with your exact location.
+                 </Note>
+               )}
+-              {!isRed && <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />}
++              {!isRed && <ExtinguisherPanel nearest={nearest} building={building} level={level} />}
+             </>
+           )}
+ 
+@@ -203,7 +200,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
+                     { t: 'Do not re-enter', d: 'wait for the BFP to declare the building safe.' },
+                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
+                   ]} />
+-                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
++                  <ExtinguisherPanel nearest={nearest} building={building} level={level} />
+                 </>
+               ) : (
+                 <>
+@@ -218,7 +215,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
+                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
+                   ]} />
+ 
+-                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
++                  <ExtinguisherPanel nearest={nearest} building={building} level={level} />
+                 </>
+               )}
+             </>
+diff --git a/app/components/MapEditor.tsx b/app/components/MapEditor.tsx
+index fb8a309..a9fce29 100644
+--- a/app/components/MapEditor.tsx
++++ b/app/components/MapEditor.tsx
+@@ -176,6 +176,11 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
+     <div style={{ width: '100%', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--border)', borderRadius: 10, background: '#0d1421' }}>
+            <div ref={canvasRef} data-map-canvas onPointerMove={isEditor ? onPointerMove : undefined} onPointerUp={isEditor ? onPointerUp : undefined} onPointerCancel={isEditor ? onPointerUp : undefined}
+         style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', background: '#0d1421', touchAction: isEditor ? 'none' : 'auto', userSelect: 'none' }}>
++        <style>{`
++          .aeg-ping{position:absolute;left:50%;top:50%;width:100%;height:100%;box-sizing:border-box;border:2px solid #22c55e;border-radius:50%;pointer-events:none;opacity:0;transform:translate(-50%,-50%);animation:aegPing 1.8s ease-out infinite}
++          @keyframes aegPing{0%{transform:translate(-50%,-50%) scale(1);opacity:.9}100%{transform:translate(-50%,-50%) scale(3.4);opacity:0}}
++          @media (prefers-reduced-motion:reduce){.aeg-ping{animation:none;opacity:.55;transform:translate(-50%,-50%) scale(1.8)}}
++        `}</style>
+         {ordered.map(object => {
+           const isRoom = object.object_type === 'room'
+           const isSafeZone = object.object_type === 'safe_zone'
+@@ -226,7 +231,7 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
+           const point = resolveEquipmentPoint(item, display, equipment, equipmentOffsets)
+           if (!point) return null
+           const { x: markerX, y: markerY, placed, building } = point
+-          const rank = extRanks.get(String(item.equipment_id))   // 1-3 while an alert is active
++          const rank = extRanks.get(String(item.equipment_id))   // set for the 3 nearest available ones while an alert is active
+           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
+ 
+           return (
+@@ -236,18 +241,20 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
+               onPointerDown={event => isEditor && onEquipmentPointerDown?.(event, item, building)}
+               style={{
+                 position: 'absolute', left: markerX, top: markerY, transform: 'translate(-50%, -50%)',
+-                width: 23, height: 23, borderRadius: 5, background: statusColor,
++                width: 23, height: 23, borderRadius: 5, background: rank ? '#16a34a' : statusColor,
+                 border: isEditor && !placed ? '2px dashed white' : '2px solid white',
+                 zIndex: rank ? 9 : 7, display: 'grid', placeItems: 'center', fontSize: 13,
+                 cursor: isEditor ? 'grab' : 'default', touchAction: 'none',
+-                boxShadow: rank ? '0 0 0 3px #22c55e, 0 0 12px 4px #22c55e88' : `0 0 0 3px ${statusColor}33`,
++                boxShadow: rank ? '0 0 0 3px #22c55e' : `0 0 0 3px ${statusColor}33`,
+               }}
+             >
+               🧯
+               {rank ? (
+-                <span style={{ position: 'absolute', top: -9, right: -9, width: 16, height: 16, borderRadius: '50%', background: '#22c55e', color: '#04210f', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', border: '1.5px solid white' }}>
+-                  {rank}
+-                </span>
++                <>
++                  {/* green "signal" pulses out of the extinguishers people should head to */}
++                  <span className="aeg-ping" aria-hidden style={{ animationDelay: '0s' }} />
++                  <span className="aeg-ping" aria-hidden style={{ animationDelay: '0.9s' }} />
++                </>
+               ) : null}
+             </div>
+           )
+diff --git a/app/components/extinguishers.ts b/app/components/extinguishers.ts
+index 1685408..e685562 100644
+--- a/app/components/extinguishers.ts
++++ b/app/components/extinguishers.ts
+@@ -55,27 +55,27 @@ export function resolveEquipmentPoint(
+ }
+ 
+ const floorNumber = (f: unknown) => { const m = /(-?\d+)/.exec(String(f ?? '')); return m ? Number(m[1]) : 1 }
+-const isAvailable = (e: any) => (e.status || 'Active') === 'Active'
++// Only "Active" units are ever recommended. Maintenance / Expired (or anything unrecognised) are ignored.
++const isAvailable = (e: any) => String(e.status || 'Active').trim().toLowerCase() === 'active'
+ 
+ export type NearExt = {
+   item: any
+   rank: number                 // 1 = nearest
+   inSameBuilding: boolean
+-  floorDiff: number            // + = extinguisher is on a higher floor than the fire
+   point: { x: number; y: number } | null
+ }
+ export type NearestResult = {
+-  usable: NearExt[]            // up to `limit` available extinguishers, nearest first
+-  unavailable: any[]           // nearby ones that are Maintenance / Expired (never sent to)
+-  nearbyCount: number          // how many extinguishers are registered around the alert at all
++  usable: NearExt[]            // up to `limit` AVAILABLE extinguishers, nearest first (may include other buildings)
++  sameBuildingCount: number    // how many of them are inside the alerting building
+ }
+ 
+-const SEARCH_RADIUS = 260      // map px: how far from the room we look outside the building
+-const FLOOR_PENALTY = 60       // one floor up/down counts like this many px of walking
++const FLOOR_PENALTY = 60       // one floor up/down counts like this many px of walking (used for ordering only)
++const UNKNOWN_DISTANCE = 99999 // no map position and not in the alerting building: ranked last, never dropped
+ 
+-// The nearest AVAILABLE extinguishers to the room that is alerting. Maintenance and
+-// Expired units are skipped (the next-nearest working one is used instead). Looks in the
+-// alerting building first-class, and at neighbouring buildings within SEARCH_RADIUS.
++// The nearest AVAILABLE extinguishers to the room that is alerting — `limit` (3) of them if that
++// many exist anywhere on campus. If the alerting building has fewer than 3 working ones, the
++// nearest in other buildings fill the remaining spots. Maintenance / Expired units are never
++// returned, so when none are left the result is simply empty.
+ export function nearestExtinguishers(opts: {
+   buildingName: string; floor?: string; room?: MapObject | null
+   objects: MapObject[]; equipment: any[]; limit?: number
+@@ -85,19 +85,17 @@ export function nearestExtinguishers(opts: {
+   const origin = room ? { x: room.x + room.width / 2, y: room.y + room.height / 2 }
+                       : building ? { x: building.x + building.width / 2, y: building.y + building.height / 2 } : null
+ 
+-  const scored = equipment.flatMap(item => {
++  const scored = equipment.filter(isAvailable).map(item => {
+     const inSame = sameBuilding(item.building, buildingName)
+     const p = resolveEquipmentPoint(item, objects, equipment)
+     const point = p ? { x: p.x, y: p.y } : null
+-    const dist = origin && point ? Math.hypot(point.x - origin.x, point.y - origin.y) : inSame ? 0 : Infinity
+-    if (!inSame && dist > SEARCH_RADIUS) return []
++    const dist = origin && point ? Math.hypot(point.x - origin.x, point.y - origin.y) : inSame ? 0 : UNKNOWN_DISTANCE
+     const floorDiff = floor ? floorNumber(item.floor) - floorNumber(floor) : 0
+-    return [{ item, inSame, point, floorDiff, score: dist + FLOOR_PENALTY * Math.abs(floorDiff) }]
++    return { item, inSame, point, score: dist + FLOOR_PENALTY * Math.abs(floorDiff) }
+   })
+   scored.sort((a, b) => a.score - b.score)
+ 
+-  const usable = scored.filter(s => isAvailable(s.item)).slice(0, limit)
+-    .map((s, i): NearExt => ({ item: s.item, rank: i + 1, inSameBuilding: s.inSame, floorDiff: s.floorDiff, point: s.point }))
+-  const unavailable = scored.filter(s => !isAvailable(s.item)).map(s => s.item)
+-  return { usable, unavailable, nearbyCount: scored.length }
++  const usable = scored.slice(0, limit)
++    .map((s, i): NearExt => ({ item: s.item, rank: i + 1, inSameBuilding: s.inSame, point: s.point }))
++  return { usable, sameBuildingCount: usable.filter(n => n.inSameBuilding).length }
+ }

@@ -63,17 +63,11 @@ function Note({ children, color }: { children: React.ReactNode; color: string })
   )
 }
 
-function where(n: NearestResult['usable'][number], buildingName?: string) {
-  if (!n.inSameBuilding) return `in ${n.item.building}`
-  if (n.floorDiff === 0) return 'same floor as the alert'
-  const f = Math.abs(n.floorDiff)
-  return `${f} floor${f > 1 ? 's' : ''} ${n.floorDiff < 0 ? 'below' : 'above'} the alert`
-}
-
 // The 3 nearest working extinguishers, or a clear "none available" message.
-function ExtinguisherPanel({ nearest, building, level, color }: { nearest: NearestResult; building?: string; level: 'Orange' | 'Red'; color: string }) {
-  const { usable, unavailable } = nearest
-  const list = unavailable.map(e => `${e.equipment_type} · ${e.floor} — ${e.location_description} (${e.status})`).join('; ')
+// Maintenance / Expired units never reach this component (they are filtered out upstream).
+function ExtinguisherPanel({ nearest, building, level }: { nearest: NearestResult; building?: string; level: 'Orange' | 'Red' }) {
+  const { usable, sameBuildingCount } = nearest
+  const name = building || 'this building'
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
@@ -85,8 +79,15 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
           <div style={{ marginTop: 6, fontSize: '.74rem', color: 'var(--muted)', lineHeight: 1.45 }}>
             {level === 'Red'
               ? <>Critical fire: <strong>never walk toward the fire to fetch one.</strong> Use one only for a small fire that blocks your only way out — otherwise leave.</>
-              : <>Only if you are trained, the fire is small (smaller than a wastebasket) and you have a clear exit behind you. They are numbered in green on the Campus Map.</>}
+              : <>Only if you are trained, the fire is small (smaller than a wastebasket) and you have a clear exit behind you. Nearest first — if the fire has already reached one, go to the next. They pulse green on the Campus Map.</>}
           </div>
+          {sameBuildingCount < usable.length && (
+            <div style={{ marginTop: 6, fontSize: '.74rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+              {sameBuildingCount === 0
+                ? <>None are available inside {name}, so these are the nearest in other buildings.</>
+                : <>Only {sameBuildingCount} available inside {name}, so the nearest in other buildings {usable.length - sameBuildingCount === 1 ? 'is' : 'are'} listed as backup.</>}
+            </div>
+          )}
           <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
             {usable.map(n => {
               const use = EXT_USE[n.item.equipment_type] || EXT_USE.ABC
@@ -96,7 +97,7 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
                   <div>
                     <div style={{ fontWeight: 600 }}>
                       {n.item.equipment_type} · {n.item.floor} — {n.item.location_description}
-                      <span style={{ marginLeft: 8, color: n.inSameBuilding && n.floorDiff === 0 ? '#22c55e' : 'var(--muted)', fontSize: '.68rem', fontWeight: 500 }}>● {where(n)}</span>
+                      {!n.inSameBuilding && <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: '.68rem', fontWeight: 500 }}>● in {n.item.building}</span>}
                     </div>
                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>Use on: {use.good}. Do not use on: {use.avoid}.</div>
                   </div>
@@ -104,14 +105,10 @@ function ExtinguisherPanel({ nearest, building, level, color }: { nearest: Neare
               )
             })}
           </div>
-          {unavailable.length > 0 && (
-            <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>⚠ Not available, do not use: {list}.</div>
-          )}
         </>
       ) : (
         <Note color="#ef4444">
-          <strong>No extinguishers are available around {building || 'this building'} right now.</strong>{' '}
-          {unavailable.length > 0 ? <>The ones registered nearby are under maintenance or expired ({list}).</> : <>None are registered for this area.</>}{' '}
+          <strong>No extinguishers are available around {name} at the moment.</strong>{' '}
           Follow the steps above, do not try to fight the fire, and wait for the Bureau of Fire Protection (BFP).
         </Note>
       )}
@@ -182,7 +179,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                   <strong>Trapped?</strong> Stay in the room, close the door, seal the gaps with cloth, signal from a window, and call <strong>911</strong> with your exact location.
                 </Note>
               )}
-              {!isRed && <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />}
+              {!isRed && <ExtinguisherPanel nearest={nearest} building={building} level={level} />}
             </>
           )}
 
@@ -203,7 +200,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                     { t: 'Do not re-enter', d: 'wait for the BFP to declare the building safe.' },
                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
                   ]} />
-                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
+                  <ExtinguisherPanel nearest={nearest} building={building} level={level} />
                 </>
               ) : (
                 <>
@@ -218,7 +215,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
                   ]} />
 
-                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
+                  <ExtinguisherPanel nearest={nearest} building={building} level={level} />
                 </>
               )}
             </>

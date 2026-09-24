@@ -55,27 +55,27 @@ export function resolveEquipmentPoint(
 }
 
 const floorNumber = (f: unknown) => { const m = /(-?\d+)/.exec(String(f ?? '')); return m ? Number(m[1]) : 1 }
-const isAvailable = (e: any) => (e.status || 'Active') === 'Active'
+// Only "Active" units are ever recommended. Maintenance / Expired (or anything unrecognised) are ignored.
+const isAvailable = (e: any) => String(e.status || 'Active').trim().toLowerCase() === 'active'
 
 export type NearExt = {
   item: any
   rank: number                 // 1 = nearest
   inSameBuilding: boolean
-  floorDiff: number            // + = extinguisher is on a higher floor than the fire
   point: { x: number; y: number } | null
 }
 export type NearestResult = {
-  usable: NearExt[]            // up to `limit` available extinguishers, nearest first
-  unavailable: any[]           // nearby ones that are Maintenance / Expired (never sent to)
-  nearbyCount: number          // how many extinguishers are registered around the alert at all
+  usable: NearExt[]            // up to `limit` AVAILABLE extinguishers, nearest first (may include other buildings)
+  sameBuildingCount: number    // how many of them are inside the alerting building
 }
 
-const SEARCH_RADIUS = 260      // map px: how far from the room we look outside the building
-const FLOOR_PENALTY = 60       // one floor up/down counts like this many px of walking
+const FLOOR_PENALTY = 60       // one floor up/down counts like this many px of walking (used for ordering only)
+const UNKNOWN_DISTANCE = 99999 // no map position and not in the alerting building: ranked last, never dropped
 
-// The nearest AVAILABLE extinguishers to the room that is alerting. Maintenance and
-// Expired units are skipped (the next-nearest working one is used instead). Looks in the
-// alerting building first-class, and at neighbouring buildings within SEARCH_RADIUS.
+// The nearest AVAILABLE extinguishers to the room that is alerting — `limit` (3) of them if that
+// many exist anywhere on campus. If the alerting building has fewer than 3 working ones, the
+// nearest in other buildings fill the remaining spots. Maintenance / Expired units are never
+// returned, so when none are left the result is simply empty.
 export function nearestExtinguishers(opts: {
   buildingName: string; floor?: string; room?: MapObject | null
   objects: MapObject[]; equipment: any[]; limit?: number
@@ -85,19 +85,17 @@ export function nearestExtinguishers(opts: {
   const origin = room ? { x: room.x + room.width / 2, y: room.y + room.height / 2 }
                       : building ? { x: building.x + building.width / 2, y: building.y + building.height / 2 } : null
 
-  const scored = equipment.flatMap(item => {
+  const scored = equipment.filter(isAvailable).map(item => {
     const inSame = sameBuilding(item.building, buildingName)
     const p = resolveEquipmentPoint(item, objects, equipment)
     const point = p ? { x: p.x, y: p.y } : null
-    const dist = origin && point ? Math.hypot(point.x - origin.x, point.y - origin.y) : inSame ? 0 : Infinity
-    if (!inSame && dist > SEARCH_RADIUS) return []
+    const dist = origin && point ? Math.hypot(point.x - origin.x, point.y - origin.y) : inSame ? 0 : UNKNOWN_DISTANCE
     const floorDiff = floor ? floorNumber(item.floor) - floorNumber(floor) : 0
-    return [{ item, inSame, point, floorDiff, score: dist + FLOOR_PENALTY * Math.abs(floorDiff) }]
+    return { item, inSame, point, score: dist + FLOOR_PENALTY * Math.abs(floorDiff) }
   })
   scored.sort((a, b) => a.score - b.score)
 
-  const usable = scored.filter(s => isAvailable(s.item)).slice(0, limit)
-    .map((s, i): NearExt => ({ item: s.item, rank: i + 1, inSameBuilding: s.inSame, floorDiff: s.floorDiff, point: s.point }))
-  const unavailable = scored.filter(s => !isAvailable(s.item)).map(s => s.item)
-  return { usable, unavailable, nearbyCount: scored.length }
+  const usable = scored.slice(0, limit)
+    .map((s, i): NearExt => ({ item: s.item, rank: i + 1, inSameBuilding: s.inSame, point: s.point }))
+  return { usable, sameBuildingCount: usable.filter(n => n.inSameBuilding).length }
 }

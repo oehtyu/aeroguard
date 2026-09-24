@@ -176,6 +176,11 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
     <div style={{ width: '100%', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--border)', borderRadius: 10, background: '#0d1421' }}>
            <div ref={canvasRef} data-map-canvas onPointerMove={isEditor ? onPointerMove : undefined} onPointerUp={isEditor ? onPointerUp : undefined} onPointerCancel={isEditor ? onPointerUp : undefined}
         style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', background: '#0d1421', touchAction: isEditor ? 'none' : 'auto', userSelect: 'none' }}>
+        <style>{`
+          .aeg-ping{position:absolute;left:50%;top:50%;width:100%;height:100%;box-sizing:border-box;border:2px solid #22c55e;border-radius:50%;pointer-events:none;opacity:0;transform:translate(-50%,-50%);animation:aegPing 1.8s ease-out infinite}
+          @keyframes aegPing{0%{transform:translate(-50%,-50%) scale(1);opacity:.9}100%{transform:translate(-50%,-50%) scale(3.4);opacity:0}}
+          @media (prefers-reduced-motion:reduce){.aeg-ping{animation:none;opacity:.55;transform:translate(-50%,-50%) scale(1.8)}}
+        `}</style>
         {ordered.map(object => {
           const isRoom = object.object_type === 'room'
           const isSafeZone = object.object_type === 'safe_zone'
@@ -226,7 +231,7 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
           const point = resolveEquipmentPoint(item, display, equipment, equipmentOffsets)
           if (!point) return null
           const { x: markerX, y: markerY, placed, building } = point
-          const rank = extRanks.get(String(item.equipment_id))   // 1-3 while an alert is active
+          const rank = extRanks.get(String(item.equipment_id))   // set for the 3 nearest available ones while an alert is active
           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
 
           return (
@@ -236,18 +241,20 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
               onPointerDown={event => isEditor && onEquipmentPointerDown?.(event, item, building)}
               style={{
                 position: 'absolute', left: markerX, top: markerY, transform: 'translate(-50%, -50%)',
-                width: 23, height: 23, borderRadius: 5, background: statusColor,
+                width: 23, height: 23, borderRadius: 5, background: rank ? '#16a34a' : statusColor,
                 border: isEditor && !placed ? '2px dashed white' : '2px solid white',
                 zIndex: rank ? 9 : 7, display: 'grid', placeItems: 'center', fontSize: 13,
                 cursor: isEditor ? 'grab' : 'default', touchAction: 'none',
-                boxShadow: rank ? '0 0 0 3px #22c55e, 0 0 12px 4px #22c55e88' : `0 0 0 3px ${statusColor}33`,
+                boxShadow: rank ? '0 0 0 3px #22c55e' : `0 0 0 3px ${statusColor}33`,
               }}
             >
               🧯
               {rank ? (
-                <span style={{ position: 'absolute', top: -9, right: -9, width: 16, height: 16, borderRadius: '50%', background: '#22c55e', color: '#04210f', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', border: '1.5px solid white' }}>
-                  {rank}
-                </span>
+                <>
+                  {/* green "signal" pulses out of the extinguishers people should head to */}
+                  <span className="aeg-ping" aria-hidden style={{ animationDelay: '0s' }} />
+                  <span className="aeg-ping" aria-hidden style={{ animationDelay: '0.9s' }} />
+                </>
               ) : null}
             </div>
           )
