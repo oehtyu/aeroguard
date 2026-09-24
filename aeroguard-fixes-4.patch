@@ -1,0 +1,244 @@
+diff --git a/app/api/export/docx/route.ts b/app/api/export/docx/route.ts
+index 3355bb8..8e92945 100644
+--- a/app/api/export/docx/route.ts
++++ b/app/api/export/docx/route.ts
+@@ -20,17 +20,18 @@ export async function POST(req: NextRequest) {
+       i.location || '',
+       i.threat_level,
+       `${i.pm25_value} µg/m³`,
++      i.responders || 'None',
+     ]);
+ 
+     const border = { style: BorderStyle.SINGLE, size: 1, color: 'CBD5E1' };
+     const borders = { top: border, bottom: border, left: border, right: border };
+-    const colWidths = [1700, 1200, 3700, 1300, 2000]; // DXA, sums to 9900
++    const colWidths = [1500, 1000, 2400, 900, 1400, 2700]; // DXA, sums to 9900
+ 
+     const levelColors: Record<string, string> = { Gray: '94a3b8', Yellow: 'eab308', Orange: 'f97316', Red: 'ef4444' };
+ 
+     const headerRow = new TableRow({
+       tableHeader: true,
+-      children: ['Time', 'Device', 'Location', 'Level', 'PM2.5'].map((h, i) =>
++      children: ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Responders'].map((h, i) =>
+         
+         new TableCell({
+           borders,
+diff --git a/app/api/export/pdf/route.ts b/app/api/export/pdf/route.ts
+index e1151f9..fe0328c 100644
+--- a/app/api/export/pdf/route.ts
++++ b/app/api/export/pdf/route.ts
+@@ -24,6 +24,14 @@ const MUTED = hex('64748b');
+ const TITLE_COLOR = hex('0072ff');
+ const WHITE = rgb(1, 1, 1);
+ 
++// Cells are one line tall — trim with an ellipsis instead of letting text wrap over the next row.
++const fit = (text: string, width: number, size: number, f: { widthOfTextAtSize: (t: string, s: number) => number }) => {
++  if (f.widthOfTextAtSize(text, size) <= width) return text;
++  let t = text;
++  while (t.length > 1 && f.widthOfTextAtSize(t + '...', size) > width) t = t.slice(0, -1);
++  return t + '...';
++};
++
+ export async function POST(req: NextRequest) {
+   try {
+         const { incidents } = await req.json();
+@@ -33,6 +41,8 @@ export async function POST(req: NextRequest) {
+       location: (i.location || '').slice(0, 35),
+       level: i.threat_level || 'Gray',
+       pm25: `${i.pm25_value ?? '-'} \u00b5g/m\u00b3`,
++      // the built-in PDF font only covers Latin-1 — swap anything else so a name can't crash the export
++      responders: String(i.responders || 'None').replace(/[^\x20-\xFF]/g, '?'),
+     }));
+     const pdfDoc = await PDFDocument.create();
+     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+@@ -41,8 +51,8 @@ export async function POST(req: NextRequest) {
+     const [pageW, pageH] = PageSizes.Letter;
+     const margin = 40;
+     const usableW = pageW - margin * 2;
+-        const colWidths = [85, 65, 190, 65, 85]; // sums to 490 ~ usableW
+-    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5'];
++        const colWidths = [72, 50, 108, 42, 62, 156]; // sums to 490 ~ usableW
++    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Responders'];
+     const rowH = 20;
+     const headerH = 22;
+ 
+@@ -69,23 +79,33 @@ export async function POST(req: NextRequest) {
+     drawHeader();
+     drawTableHeader();
+ 
++    // Responders get as many lines as they need (one "Name (Role)" per line) so a
++    // report with several responders is never cut short.
++    const respWidth = colWidths[5] - 8;
++    const lineH = 10;
++
+     rows.forEach((row: any, ri: number) => {
+-      if (y - rowH < margin + 30) {
++      const respLines = String(row.responders).split('; ').map((t: string) => fit(t, respWidth, 8, font));
++      const thisH = Math.max(rowH, respLines.length * lineH + 10);
++      if (y - thisH < margin + 30) {
+         page = pdfDoc.addPage(PageSizes.Letter);
+         y = pageH - margin;
+         drawTableHeader();
+       }
+       let x = margin;
+-      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
+-            const cells = [row.time, row.device, row.location, row.level, row.pm25];
++      page.drawRectangle({ x: margin, y: y - thisH, width: usableW, height: thisH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
++      const cells = [row.time, row.device, row.location, row.level, row.pm25];
+       cells.forEach((cell, ci) => {
+         const isLevel = ci === 3;
+         const color = isLevel ? hex(LEVEL_COLORS[row.level] || '94a3b8') : TEXT;
+-        page.drawText(String(cell), { x: x + 5, y: y - rowH + 6, size: 8, font: isLevel ? fontBold : font, color, maxWidth: colWidths[ci] - 8 });
++        page.drawText(fit(String(cell), colWidths[ci] - 8, 8, isLevel ? fontBold : font), { x: x + 5, y: y - rowH + 6, size: 8, font: isLevel ? fontBold : font, color });
+         x += colWidths[ci];
+       });
+-      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, borderColor: GRID, borderWidth: 0.5, color: undefined });
+-      y -= rowH;
++      respLines.forEach((line: string, li: number) => {
++        page.drawText(line, { x: x + 5, y: y - 13 - li * lineH, size: 8, font, color: TEXT });
++      });
++      page.drawRectangle({ x: margin, y: y - thisH, width: usableW, height: thisH, borderColor: GRID, borderWidth: 0.5, color: undefined });
++      y -= thisH;
+     });
+ 
+     page.drawText('AeroGuard \u2014 BPSU Fire Safety System | Sentinel Aerosol Systems', { x: margin, y: margin - 10, size: 7.5, font, color: MUTED });
+diff --git a/app/api/reports/route.ts b/app/api/reports/route.ts
+index a8b664b..717a7cd 100644
+--- a/app/api/reports/route.ts
++++ b/app/api/reports/route.ts
+@@ -12,10 +12,18 @@ export async function GET(req: NextRequest) {
+     const user_id = searchParams.get('user_id');
+     const all = searchParams.get('all');
+ 
++    // The responder's role comes from the users table, so every report (old or new)
++    // shows it and it stays correct if an admin changes someone's role.
+     const rows = all
+-      ? await sql`SELECT * FROM incident_reports ORDER BY created_at DESC LIMIT 200`
++      ? await sql`
++          SELECT r.*, u.user_type AS responder_role, COALESCE(r.full_name, u.full_name) AS responder_name
++          FROM incident_reports r LEFT JOIN users u ON u.user_id = r.user_id
++          ORDER BY r.created_at DESC LIMIT 200`
+       : user_id
+-      ? await sql`SELECT * FROM incident_reports WHERE user_id=${user_id} ORDER BY created_at DESC`
++      ? await sql`
++          SELECT r.*, u.user_type AS responder_role, COALESCE(r.full_name, u.full_name) AS responder_name
++          FROM incident_reports r LEFT JOIN users u ON u.user_id = r.user_id
++          WHERE r.user_id=${user_id} ORDER BY r.created_at DESC`
+       : [];
+ 
+     return NextResponse.json({ success: true, data: rows });
+diff --git a/app/api/responses/route.ts b/app/api/responses/route.ts
+index 6236be8..5f1b8e0 100644
+--- a/app/api/responses/route.ts
++++ b/app/api/responses/route.ts
+@@ -34,10 +34,11 @@ export async function GET(req: NextRequest) {
+ 
+     const limit = limitForLevel(incident.threat_level)
+     const responders = await sql`
+-      SELECT user_id, full_name
+-      FROM incident_responses
+-      WHERE incident_id = ${incident.incident_id}
+-      ORDER BY responded_at ASC
++      SELECT ir.user_id, COALESCE(ir.full_name, u.full_name) AS full_name, u.user_type AS role
++      FROM incident_responses ir
++      LEFT JOIN users u ON u.user_id = ir.user_id
++      WHERE ir.incident_id = ${incident.incident_id}
++      ORDER BY ir.responded_at ASC
+     `
+ 
+     return NextResponse.json({
+diff --git a/app/dashboard/page.tsx b/app/dashboard/page.tsx
+index a0ee9b4..e703e96 100644
+--- a/app/dashboard/page.tsx
++++ b/app/dashboard/page.tsx
+@@ -277,7 +277,7 @@ function ResponderAvatars({responders,limit}:{responders:any[],limit:number}){
+         {slots.map((_,i)=>{
+           const r=responders[i]
+           return (
+-            <div key={i} title={r?.full_name||''} style={{
++            <div key={i} title={r?`${r.full_name||''}${r.role?' · '+r.role:''}`:''} style={{
+               width:30,height:30,borderRadius:'50%',
+               background:r?'linear-gradient(135deg,#0072ff,#00c2ff)':'var(--panel2)',
+               border:r?'2px solid #00c2ff':'2px dashed var(--border)',
+@@ -296,6 +296,16 @@ function ResponderAvatars({responders,limit}:{responders:any[],limit:number}){
+   )
+ }
+ 
++const ROLE_HEX:Record<string,string>={Admin:'#00c2ff',Security:'#22c55e',DRRM:'#f97316','Campus Personnel':'#94a3b8'}
++function RoleChip({role}:{role?:string|null}) {
++  if(!role) return null
++  const c=ROLE_HEX[role]||'#94a3b8'
++  return <span style={{marginLeft:8,padding:'1px 8px',borderRadius:10,fontSize:'.66rem',fontWeight:700,letterSpacing:.3,color:c,border:`1px solid ${c}66`,background:`${c}1f`,whiteSpace:'nowrap'}}>{role}</span>
++}
++// "Dale (DRRM); Aeron Ramos (Security)" — used by the exports
++const respondersText=(reports:any[],incidentId:number)=>reports.filter(r=>r.incident_id===incidentId)
++  .map(r=>`${r.responder_name||r.full_name||'User #'+r.user_id} (${r.responder_role||'role n/a'})`).join('; ')
++
+ function RoleBadge({role}:{role:string}) {
+   const c:Record<string,string>={Admin:'var(--accent)',Security:'var(--green)',DRRM:'var(--orange)','Campus Personnel':'var(--muted)'}
+   return <span style={{color:c[role]||'var(--muted)',fontWeight:600}}>{role}</span>
+@@ -377,6 +387,9 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
+             <div style={{ fontWeight: 600, fontSize: '.9rem' }}>{r.location}</div>
+             <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginTop: 2 }}>
+               {r.threat_level} alert · {new Date(r.created_at).toLocaleString()}
++            </div>
++            <div style={{ fontSize: '.78rem', marginTop: 4 }}>
++              Responder: <b>{r.responder_name || r.full_name || 'User #' + r.user_id}</b><RoleChip role={r.responder_role} />
+             </div>
+                         {r.status === 'Submitted' && (
+               <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
+@@ -609,11 +622,12 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
+ }
+ // ── EXPORT HELPERS ────────────────────────────────────────────
+ function exportCSV(incidents: any[], filename: string) {
+-  const rows=['Time,Device,Location,Level,PM2.5',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}"`)]
++  const q=(v:any)=>`"${String(v??'').replace(/"/g,'""')}"`
++  const rows=['Time,Device,Location,Level,PM2.5,Responders',...incidents.map(i=>[fmtTime(i.created_at),i.device_id,i.location,i.threat_level,i.pm25_value,i.responders||'None'].map(q).join(','))]
+   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:`${filename}.csv`});a.click()
+ }
+ function exportTXT(incidents: any[], filename: string) {
+-  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³`)]
++  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Responders','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.responders||'None'}`)]
+   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:`${filename}.txt`});a.click()
+ }
+ async function exportPDF(incidents: any[], filename: string) {
+@@ -1059,11 +1073,13 @@ function declineResponse() {
+   async function handleExport(type:string){
+     setExportMenu(false);setExportLoading(type)
+     const filename=buildBatchFilename(dateFilteredIncidents,incFilter,incFrom,incTo)
++    // each incident carries "Name (Role); Name (Role)" for its responders
++    const withResponders=dateFilteredIncidents.map(i=>({...i,responders:respondersText(reports,i.incident_id)}))
+     try{
+-      if(type==='csv') exportCSV(dateFilteredIncidents,filename)
+-      else if(type==='txt') exportTXT(dateFilteredIncidents,filename)
+-      else if(type==='pdf') await exportPDF(dateFilteredIncidents,filename)
+-      else if(type==='docx') await exportDOCX(dateFilteredIncidents,filename)
++      if(type==='csv') exportCSV(withResponders,filename)
++      else if(type==='txt') exportTXT(withResponders,filename)
++      else if(type==='pdf') await exportPDF(withResponders,filename)
++      else if(type==='docx') await exportDOCX(withResponders,filename)
+     } finally{setExportLoading(null)}
+   }
+ 
+@@ -1494,6 +1510,12 @@ o.name.trim() !== '')
+                     <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
+                     <div style={{color:'var(--muted)',fontSize:'.75rem'}}>
+                       {linkedReports.length===0 ? 'No responders' : `${submitted.length}/${linkedReports.length} submitted`}
++                      {linkedReports.slice(0,3).map(r=>(
++                        <div key={r.report_id} style={{marginTop:3,color:'var(--text)',fontSize:'.72rem'}}>
++                          {r.responder_name||r.full_name||'User #'+r.user_id}<RoleChip role={r.responder_role}/>
++                        </div>
++                      ))}
++                      {linkedReports.length>3&&<div style={{marginTop:3,fontSize:'.7rem'}}>+{linkedReports.length-3} more — open View / Export</div>}
+                     </div>
+                     <button onClick={()=>setViewIncident(i)}
+                             style={{padding:'5px 12px',background:'rgba(59,130,246,.12)',border:'1px solid rgba(59,130,246,.3)',borderRadius:5,color:'#60a5fa',fontSize:'.7rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
+@@ -1537,7 +1559,7 @@ o.name.trim() !== '')
+                     {linkedReports.map(r=>(
+                       <div key={r.report_id} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--border)'}}>
+                         <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem'}}>
+-                          <b>{r.full_name||'User #'+r.user_id}</b>
++                          <span><b>{r.responder_name||r.full_name||'User #'+r.user_id}</b><RoleChip role={r.responder_role}/></span>
+                           <span style={{color:r.status==='Submitted'?'var(--green)':'var(--yellow)',fontSize:'.7rem',fontWeight:700}}>{r.status.toUpperCase()}</span>
+                         </div>
+                         {r.status==='Submitted' ? (

@@ -277,7 +277,7 @@ function ResponderAvatars({responders,limit}:{responders:any[],limit:number}){
         {slots.map((_,i)=>{
           const r=responders[i]
           return (
-            <div key={i} title={r?.full_name||''} style={{
+            <div key={i} title={r?`${r.full_name||''}${r.role?' · '+r.role:''}`:''} style={{
               width:30,height:30,borderRadius:'50%',
               background:r?'linear-gradient(135deg,#0072ff,#00c2ff)':'var(--panel2)',
               border:r?'2px solid #00c2ff':'2px dashed var(--border)',
@@ -295,6 +295,16 @@ function ResponderAvatars({responders,limit}:{responders:any[],limit:number}){
     </div>
   )
 }
+
+const ROLE_HEX:Record<string,string>={Admin:'#00c2ff',Security:'#22c55e',DRRM:'#f97316','Campus Personnel':'#94a3b8'}
+function RoleChip({role}:{role?:string|null}) {
+  if(!role) return null
+  const c=ROLE_HEX[role]||'#94a3b8'
+  return <span style={{marginLeft:8,padding:'1px 8px',borderRadius:10,fontSize:'.66rem',fontWeight:700,letterSpacing:.3,color:c,border:`1px solid ${c}66`,background:`${c}1f`,whiteSpace:'nowrap'}}>{role}</span>
+}
+// "Dale (DRRM); Aeron Ramos (Security)" — used by the exports
+const respondersText=(reports:any[],incidentId:number)=>reports.filter(r=>r.incident_id===incidentId)
+  .map(r=>`${r.responder_name||r.full_name||'User #'+r.user_id} (${r.responder_role||'role n/a'})`).join('; ')
 
 function RoleBadge({role}:{role:string}) {
   const c:Record<string,string>={Admin:'var(--accent)',Security:'var(--green)',DRRM:'var(--orange)','Campus Personnel':'var(--muted)'}
@@ -377,6 +387,9 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
             <div style={{ fontWeight: 600, fontSize: '.9rem' }}>{r.location}</div>
             <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginTop: 2 }}>
               {r.threat_level} alert · {new Date(r.created_at).toLocaleString()}
+            </div>
+            <div style={{ fontSize: '.78rem', marginTop: 4 }}>
+              Responder: <b>{r.responder_name || r.full_name || 'User #' + r.user_id}</b><RoleChip role={r.responder_role} />
             </div>
                         {r.status === 'Submitted' && (
               <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
@@ -609,11 +622,12 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
 }
 // ── EXPORT HELPERS ────────────────────────────────────────────
 function exportCSV(incidents: any[], filename: string) {
-  const rows=['Time,Device,Location,Level,PM2.5',...incidents.map(i=>`"${fmtTime(i.created_at)}","${i.device_id}","${i.location}","${i.threat_level}","${i.pm25_value}"`)]
+  const q=(v:any)=>`"${String(v??'').replace(/"/g,'""')}"`
+  const rows=['Time,Device,Location,Level,PM2.5,Responders',...incidents.map(i=>[fmtTime(i.created_at),i.device_id,i.location,i.threat_level,i.pm25_value,i.responders||'None'].map(q).join(','))]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'})),download:`${filename}.csv`});a.click()
 }
 function exportTXT(incidents: any[], filename: string) {
-  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³`)]
+  const lines=['AeroGuard Incident Report','Generated: '+new Date().toLocaleString('en-PH'),'','Time | Device | Location | Level | PM2.5 | Responders','='.repeat(80),...incidents.map(i=>`${fmtTime(i.created_at)} | ${i.device_id} | ${i.location} | ${i.threat_level} | ${i.pm25_value} µg/m³ | ${i.responders||'None'}`)]
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'})),download:`${filename}.txt`});a.click()
 }
 async function exportPDF(incidents: any[], filename: string) {
@@ -1059,11 +1073,13 @@ function declineResponse() {
   async function handleExport(type:string){
     setExportMenu(false);setExportLoading(type)
     const filename=buildBatchFilename(dateFilteredIncidents,incFilter,incFrom,incTo)
+    // each incident carries "Name (Role); Name (Role)" for its responders
+    const withResponders=dateFilteredIncidents.map(i=>({...i,responders:respondersText(reports,i.incident_id)}))
     try{
-      if(type==='csv') exportCSV(dateFilteredIncidents,filename)
-      else if(type==='txt') exportTXT(dateFilteredIncidents,filename)
-      else if(type==='pdf') await exportPDF(dateFilteredIncidents,filename)
-      else if(type==='docx') await exportDOCX(dateFilteredIncidents,filename)
+      if(type==='csv') exportCSV(withResponders,filename)
+      else if(type==='txt') exportTXT(withResponders,filename)
+      else if(type==='pdf') await exportPDF(withResponders,filename)
+      else if(type==='docx') await exportDOCX(withResponders,filename)
     } finally{setExportLoading(null)}
   }
 
@@ -1494,6 +1510,12 @@ o.name.trim() !== '')
                     <div style={{fontFamily:'var(--mono)',color:pmColor(Number(i.pm25_value))}}>{i.pm25_value} µg/m³</div>
                     <div style={{color:'var(--muted)',fontSize:'.75rem'}}>
                       {linkedReports.length===0 ? 'No responders' : `${submitted.length}/${linkedReports.length} submitted`}
+                      {linkedReports.slice(0,3).map(r=>(
+                        <div key={r.report_id} style={{marginTop:3,color:'var(--text)',fontSize:'.72rem'}}>
+                          {r.responder_name||r.full_name||'User #'+r.user_id}<RoleChip role={r.responder_role}/>
+                        </div>
+                      ))}
+                      {linkedReports.length>3&&<div style={{marginTop:3,fontSize:'.7rem'}}>+{linkedReports.length-3} more — open View / Export</div>}
                     </div>
                     <button onClick={()=>setViewIncident(i)}
                             style={{padding:'5px 12px',background:'rgba(59,130,246,.12)',border:'1px solid rgba(59,130,246,.3)',borderRadius:5,color:'#60a5fa',fontSize:'.7rem',fontWeight:600,cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
@@ -1537,7 +1559,7 @@ o.name.trim() !== '')
                     {linkedReports.map(r=>(
                       <div key={r.report_id} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--border)'}}>
                         <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem'}}>
-                          <b>{r.full_name||'User #'+r.user_id}</b>
+                          <span><b>{r.responder_name||r.full_name||'User #'+r.user_id}</b><RoleChip role={r.responder_role}/></span>
                           <span style={{color:r.status==='Submitted'?'var(--green)':'var(--yellow)',fontSize:'.7rem',fontWeight:700}}>{r.status.toUpperCase()}</span>
                         </div>
                         {r.status==='Submitted' ? (

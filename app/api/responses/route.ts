@@ -34,10 +34,11 @@ export async function GET(req: NextRequest) {
 
     const limit = limitForLevel(incident.threat_level)
     const responders = await sql`
-      SELECT user_id, full_name
-      FROM incident_responses
-      WHERE incident_id = ${incident.incident_id}
-      ORDER BY responded_at ASC
+      SELECT ir.user_id, COALESCE(ir.full_name, u.full_name) AS full_name, u.user_type AS role
+      FROM incident_responses ir
+      LEFT JOIN users u ON u.user_id = ir.user_id
+      WHERE ir.incident_id = ${incident.incident_id}
+      ORDER BY ir.responded_at ASC
     `
 
     return NextResponse.json({

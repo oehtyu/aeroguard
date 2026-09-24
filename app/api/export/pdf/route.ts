@@ -24,6 +24,14 @@ const MUTED = hex('64748b');
 const TITLE_COLOR = hex('0072ff');
 const WHITE = rgb(1, 1, 1);
 
+// Cells are one line tall — trim with an ellipsis instead of letting text wrap over the next row.
+const fit = (text: string, width: number, size: number, f: { widthOfTextAtSize: (t: string, s: number) => number }) => {
+  if (f.widthOfTextAtSize(text, size) <= width) return text;
+  let t = text;
+  while (t.length > 1 && f.widthOfTextAtSize(t + '...', size) > width) t = t.slice(0, -1);
+  return t + '...';
+};
+
 export async function POST(req: NextRequest) {
   try {
         const { incidents } = await req.json();
@@ -33,6 +41,8 @@ export async function POST(req: NextRequest) {
       location: (i.location || '').slice(0, 35),
       level: i.threat_level || 'Gray',
       pm25: `${i.pm25_value ?? '-'} \u00b5g/m\u00b3`,
+      // the built-in PDF font only covers Latin-1 — swap anything else so a name can't crash the export
+      responders: String(i.responders || 'None').replace(/[^\x20-\xFF]/g, '?'),
     }));
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -41,8 +51,8 @@ export async function POST(req: NextRequest) {
     const [pageW, pageH] = PageSizes.Letter;
     const margin = 40;
     const usableW = pageW - margin * 2;
-        const colWidths = [85, 65, 190, 65, 85]; // sums to 490 ~ usableW
-    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5'];
+        const colWidths = [72, 50, 108, 42, 62, 156]; // sums to 490 ~ usableW
+    const headers = ['Time', 'Device', 'Location', 'Level', 'PM2.5', 'Responders'];
     const rowH = 20;
     const headerH = 22;
 
@@ -69,23 +79,33 @@ export async function POST(req: NextRequest) {
     drawHeader();
     drawTableHeader();
 
+    // Responders get as many lines as they need (one "Name (Role)" per line) so a
+    // report with several responders is never cut short.
+    const respWidth = colWidths[5] - 8;
+    const lineH = 10;
+
     rows.forEach((row: any, ri: number) => {
-      if (y - rowH < margin + 30) {
+      const respLines = String(row.responders).split('; ').map((t: string) => fit(t, respWidth, 8, font));
+      const thisH = Math.max(rowH, respLines.length * lineH + 10);
+      if (y - thisH < margin + 30) {
         page = pdfDoc.addPage(PageSizes.Letter);
         y = pageH - margin;
         drawTableHeader();
       }
       let x = margin;
-      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
-            const cells = [row.time, row.device, row.location, row.level, row.pm25];
+      page.drawRectangle({ x: margin, y: y - thisH, width: usableW, height: thisH, color: ri % 2 === 0 ? ROW_BG_EVEN : ROW_BG_ODD });
+      const cells = [row.time, row.device, row.location, row.level, row.pm25];
       cells.forEach((cell, ci) => {
         const isLevel = ci === 3;
         const color = isLevel ? hex(LEVEL_COLORS[row.level] || '94a3b8') : TEXT;
-        page.drawText(String(cell), { x: x + 5, y: y - rowH + 6, size: 8, font: isLevel ? fontBold : font, color, maxWidth: colWidths[ci] - 8 });
+        page.drawText(fit(String(cell), colWidths[ci] - 8, 8, isLevel ? fontBold : font), { x: x + 5, y: y - rowH + 6, size: 8, font: isLevel ? fontBold : font, color });
         x += colWidths[ci];
       });
-      page.drawRectangle({ x: margin, y: y - rowH, width: usableW, height: rowH, borderColor: GRID, borderWidth: 0.5, color: undefined });
-      y -= rowH;
+      respLines.forEach((line: string, li: number) => {
+        page.drawText(line, { x: x + 5, y: y - 13 - li * lineH, size: 8, font, color: TEXT });
+      });
+      page.drawRectangle({ x: margin, y: y - thisH, width: usableW, height: thisH, borderColor: GRID, borderWidth: 0.5, color: undefined });
+      y -= thisH;
     });
 
     page.drawText('AeroGuard \u2014 BPSU Fire Safety System | Sentinel Aerosol Systems', { x: margin, y: margin - 10, size: 7.5, font, color: MUTED });

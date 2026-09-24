@@ -12,10 +12,18 @@ export async function GET(req: NextRequest) {
     const user_id = searchParams.get('user_id');
     const all = searchParams.get('all');
 
+    // The responder's role comes from the users table, so every report (old or new)
+    // shows it and it stays correct if an admin changes someone's role.
     const rows = all
-      ? await sql`SELECT * FROM incident_reports ORDER BY created_at DESC LIMIT 200`
+      ? await sql`
+          SELECT r.*, u.user_type AS responder_role, COALESCE(r.full_name, u.full_name) AS responder_name
+          FROM incident_reports r LEFT JOIN users u ON u.user_id = r.user_id
+          ORDER BY r.created_at DESC LIMIT 200`
       : user_id
-      ? await sql`SELECT * FROM incident_reports WHERE user_id=${user_id} ORDER BY created_at DESC`
+      ? await sql`
+          SELECT r.*, u.user_type AS responder_role, COALESCE(r.full_name, u.full_name) AS responder_name
+          FROM incident_reports r LEFT JOIN users u ON u.user_id = r.user_id
+          WHERE r.user_id=${user_id} ORDER BY r.created_at DESC`
       : [];
 
     return NextResponse.json({ success: true, data: rows });
