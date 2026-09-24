@@ -2,6 +2,7 @@
 
 import { PointerEvent, RefObject, useEffect, useRef, useState } from 'react'
 import { planEvacuation } from './evacuation'
+import { nearestExtinguishers, resolveEquipmentPoint, sameBuilding } from './extinguishers'
 
 export type MapObject = {
   map_object_id: number
@@ -33,12 +34,9 @@ const numberValue = (value: unknown, fallback: number) => {
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
-// "COAS Building" (equipment record) and "COAS" (map block) are the same place.
-// Compare names loosely so a wording difference never makes a marker vanish.
-const normName = (v: unknown) => String(v ?? '').toLowerCase().replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
-export const sameBuilding = (a: unknown, b: unknown) => normName(a) === normName(b) && normName(a) !== ''
+export { sameBuilding }
 
-function normaliseObject(object: MapObject): MapObject {
+export function normaliseObject(object: MapObject): MapObject {
   return {
     ...object,
     map_object_id: numberValue(object.map_object_id, 0),
@@ -157,6 +155,19 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
     return [{ device_id: device.device_id, threat_level: incident.threat_level, points, safeZoneName: safeZone.name }]
   })
 
+  // While a room is in an Orange/Red alert, number the 3 nearest AVAILABLE extinguishers
+  // (1 = nearest) so people can see where to go. Maintenance/Expired units are never numbered.
+  const extRanks = new Map<string, number>()
+  devices.forEach(device => {
+    const incident = activeByDevice.get(device.device_id) as any
+    if (!incident || (incident.threat_level !== 'Orange' && incident.threat_level !== 'Red')) return
+    const room = display.find(o => o.object_type === 'room' && o.parent_name === device.building && o.name === device.room && (!device.floor || !o.floor || o.floor === device.floor))
+    nearestExtinguishers({ buildingName: device.building, floor: device.floor, room, objects: display, equipment }).usable.forEach(n => {
+      const key = String(n.item.equipment_id)
+      extRanks.set(key, Math.min(extRanks.get(key) ?? 99, n.rank))
+    })
+  })
+
   return (
     // Outer wrapper is the actual scrollable/pannable viewport — this is
     // what fixes mobile: instead of shrinking the whole map to fit a
@@ -212,57 +223,32 @@ export function MapCanvas({ objects, devices = [], incidents = [], equipment = [
           return <div key={device.device_id} title={`${device.device_id} — ${device.device_name || 'Smoke detector'}`} style={{ position: 'absolute', left: room.x + room.width / 2, top: room.y + room.height / 2, transform: 'translate(-50%, -50%)', width: 24, height: 24, borderRadius: '50%', background: color, border: '2px solid white', zIndex: 5, display: 'grid', placeItems: 'center', fontSize: 12, pointerEvents: 'none', boxShadow: `0 0 0 3px ${color}33` }}>📡</div>
         })}
         {equipment.map((item, index) => {
-          const building = display.find(object => object.object_type === 'building' && sameBuilding(object.name, item.building))
-          if (!building) return null
-
-          // 1) An admin-placed position (stored relative to the building, so it
-          //    follows the building if it is moved). 2) The room named in the
-          //    location ("Near Room 101"). 3) A tidy spot on the building edge.
-          const dragged = equipmentOffsets[String(item.equipment_id)]
-          const saved = item.map_x != null && item.map_y != null && Number.isFinite(Number(item.map_x)) && Number.isFinite(Number(item.map_y))
-            ? { x: Number(item.map_x), y: Number(item.map_y) } : null
-          const offset = dragged || saved
-
-          const desc = String(item.location_description || '').trim()
-          const squash = (v: string) => v.trim().toLowerCase().replace(/\s+/g, '')
-          const wanted = squash(/^near\s+(.+)$/i.exec(desc)?.[1] ?? /\broom\s*(\d+)/i.exec(desc)?.[0] ?? '')
-          const room = wanted
-            ? display.find(o => o.object_type === 'room' && o.parent_id === building.map_object_id &&
-                squash(o.name) === wanted && (!item.floor || !o.floor || o.floor === item.floor))
-            : undefined
-
-          let markerX: number
-          let markerY: number
-          if (offset) {
-            markerX = building.x + offset.x
-            markerY = building.y + offset.y
-          } else if (room) {
-            markerX = clamp(room.x + room.width - 12, room.x + 12, room.x + room.width)
-            markerY = clamp(room.y + room.height - 12, room.y + 12, room.y + room.height)
-          } else {
-            const generic = equipment.filter(e => sameBuilding(e.building, item.building))
-            const positionInBuilding = generic.findIndex(e => String(e.equipment_id) === String(item.equipment_id))
-            markerX = clamp(building.x + building.width - 18 - (positionInBuilding % 3) * 28, building.x + 12, building.x + building.width - 12)
-            markerY = clamp(building.y + 18 + Math.floor(positionInBuilding / 3) * 28, building.y + 12, building.y + building.height - 12)
-          }
-          const placed = !!offset
+          const point = resolveEquipmentPoint(item, display, equipment, equipmentOffsets)
+          if (!point) return null
+          const { x: markerX, y: markerY, placed, building } = point
+          const rank = extRanks.get(String(item.equipment_id))   // 1-3 while an alert is active
           const statusColor = item.status === 'Expired' ? '#ef4444' : item.status === 'Maintenance' ? '#eab308' : '#f97316'
 
           return (
             <div
               key={`extinguisher-${item.equipment_id || index}`}
-              title={`Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}${isEditor ? (placed ? ' | drag to move' : ' | not placed yet - drag it to its exact spot') : ''}`}
+              title={`${rank ? `#${rank} nearest available extinguisher | ` : ''}Extinguisher: ${item.equipment_type || 'ABC'} | ${item.building} | ${item.floor || ''} ${item.location_description || ''} | ${item.status || 'Active'}${isEditor ? (placed ? ' | drag to move' : ' | not placed yet - drag it to its exact spot') : ''}`}
               onPointerDown={event => isEditor && onEquipmentPointerDown?.(event, item, building)}
               style={{
                 position: 'absolute', left: markerX, top: markerY, transform: 'translate(-50%, -50%)',
                 width: 23, height: 23, borderRadius: 5, background: statusColor,
                 border: isEditor && !placed ? '2px dashed white' : '2px solid white',
-                zIndex: 7, display: 'grid', placeItems: 'center', fontSize: 13,
+                zIndex: rank ? 9 : 7, display: 'grid', placeItems: 'center', fontSize: 13,
                 cursor: isEditor ? 'grab' : 'default', touchAction: 'none',
-                boxShadow: `0 0 0 3px ${statusColor}33`,
+                boxShadow: rank ? '0 0 0 3px #22c55e, 0 0 12px 4px #22c55e88' : `0 0 0 3px ${statusColor}33`,
               }}
             >
               🧯
+              {rank ? (
+                <span style={{ position: 'absolute', top: -9, right: -9, width: 16, height: 16, borderRadius: '50%', background: '#22c55e', color: '#04210f', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', border: '1.5px solid white' }}>
+                  {rank}
+                </span>
+              ) : null}
             </div>
           )
         })}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import type { NearestResult } from './extinguishers'
 
 // ─────────────────────────────────────────────────────────────
 // Live guidance for an active Orange/Red alert.
@@ -20,7 +21,7 @@ export type GuidanceProps = {
   building?: string
   floor?: string
   assemblyArea?: string | null
-  extinguishers: any[]        // equipment rows already filtered to the affected building
+  nearest: NearestResult      // the 3 nearest AVAILABLE extinguishers to the alerting room (+ unavailable ones)
   isResponder: boolean        // this user accepted the response request
   onRespond?: () => void      // opens the "Can you respond?" prompt
 }
@@ -62,17 +63,69 @@ function Note({ children, color }: { children: React.ReactNode; color: string })
   )
 }
 
-export default function GuidanceCard({ level, location, building, floor, assemblyArea, extinguishers, isResponder, onRespond }: GuidanceProps) {
+function where(n: NearestResult['usable'][number], buildingName?: string) {
+  if (!n.inSameBuilding) return `in ${n.item.building}`
+  if (n.floorDiff === 0) return 'same floor as the alert'
+  const f = Math.abs(n.floorDiff)
+  return `${f} floor${f > 1 ? 's' : ''} ${n.floorDiff < 0 ? 'below' : 'above'} the alert`
+}
+
+// The 3 nearest working extinguishers, or a clear "none available" message.
+function ExtinguisherPanel({ nearest, building, level, color }: { nearest: NearestResult; building?: string; level: 'Orange' | 'Red'; color: string }) {
+  const { usable, unavailable } = nearest
+  const list = unavailable.map(e => `${e.equipment_type} · ${e.floor} — ${e.location_description} (${e.status})`).join('; ')
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
+        🧯 Nearest available extinguishers
+      </div>
+
+      {usable.length > 0 ? (
+        <>
+          <div style={{ marginTop: 6, fontSize: '.74rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+            {level === 'Red'
+              ? <>Critical fire: <strong>never walk toward the fire to fetch one.</strong> Use one only for a small fire that blocks your only way out — otherwise leave.</>
+              : <>Only if you are trained, the fire is small (smaller than a wastebasket) and you have a clear exit behind you. They are numbered in green on the Campus Map.</>}
+          </div>
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            {usable.map(n => {
+              const use = EXT_USE[n.item.equipment_type] || EXT_USE.ABC
+              return (
+                <div key={n.item.equipment_id} style={{ display: 'flex', gap: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--panel2)', border: '1px solid var(--border)', fontSize: '.76rem' }}>
+                  <span style={{ flex: '0 0 20px', height: 20, borderRadius: '50%', background: '#22c55e', color: '#04210f', fontWeight: 800, fontSize: '.7rem', display: 'grid', placeItems: 'center' }}>{n.rank}</span>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      {n.item.equipment_type} · {n.item.floor} — {n.item.location_description}
+                      <span style={{ marginLeft: 8, color: n.inSameBuilding && n.floorDiff === 0 ? '#22c55e' : 'var(--muted)', fontSize: '.68rem', fontWeight: 500 }}>● {where(n)}</span>
+                    </div>
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>Use on: {use.good}. Do not use on: {use.avoid}.</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {unavailable.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>⚠ Not available, do not use: {list}.</div>
+          )}
+        </>
+      ) : (
+        <Note color="#ef4444">
+          <strong>No extinguishers are available around {building || 'this building'} right now.</strong>{' '}
+          {unavailable.length > 0 ? <>The ones registered nearby are under maintenance or expired ({list}).</> : <>None are registered for this area.</>}{' '}
+          Follow the steps above, do not try to fight the fire, and wait for the Bureau of Fire Protection (BFP).
+        </Note>
+      )}
+    </div>
+  )
+}
+
+export default function GuidanceCard({ level, location, building, floor, assemblyArea, nearest, isResponder, onRespond }: GuidanceProps) {
   const isRed = level === 'Red'
   const color = isRed ? '#ef4444' : '#f97316'
   const [tab, setTab] = useState<'evacuate' | 'respond'>(isResponder ? 'respond' : 'evacuate')
   const [open, setOpen] = useState(true)
   useEffect(() => { if (isResponder) setTab('respond') }, [isResponder])
 
-  // Same-floor extinguishers first; only Active ones are safe to send people to.
-  const byFloor = (a: any, b: any) => Number(b.floor === floor) - Number(a.floor === floor)
-  const usable = extinguishers.filter(e => (e.status || 'Active') === 'Active').sort(byFloor)
-  const unusable = extinguishers.filter(e => (e.status || 'Active') !== 'Active')
   const gather = assemblyArea ? `the ${assemblyArea} assembly area` : 'the nearest assembly area / open ground away from the building'
 
   const evacSteps: { t: string; d?: string }[] = isRed ? [
@@ -129,6 +182,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                   <strong>Trapped?</strong> Stay in the room, close the door, seal the gaps with cloth, signal from a window, and call <strong>911</strong> with your exact location.
                 </Note>
               )}
+              {!isRed && <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />}
             </>
           )}
 
@@ -149,6 +203,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                     { t: 'Do not re-enter', d: 'wait for the BFP to declare the building safe.' },
                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
                   ]} />
+                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
                 </>
               ) : (
                 <>
@@ -163,34 +218,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
                     { t: 'Submit your incident report', d: 'record what you did and when, while it is fresh.' },
                   ]} />
 
-                  <div style={{ marginTop: 16, fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                    🧯 Extinguishers in {building || 'this building'}
-                  </div>
-                  {usable.length > 0 ? (
-                    <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-                      {usable.map(e => {
-                        const use = EXT_USE[e.equipment_type] || EXT_USE.ABC
-                        return (
-                          <div key={e.equipment_id} style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--panel2)', border: '1px solid var(--border)', fontSize: '.76rem' }}>
-                            <div style={{ fontWeight: 600 }}>
-                              {e.equipment_type} · {e.floor} — {e.location_description}
-                              {e.floor === floor && <span style={{ marginLeft: 8, color: '#22c55e', fontSize: '.68rem' }}>● same floor as the alert</span>}
-                            </div>
-                            <div style={{ color: 'var(--muted)', marginTop: 2 }}>Use on: {use.good}. Do not use on: {use.avoid}.</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <Note color="#ef4444">
-                      <strong>No working extinguisher is registered for this building.</strong> Do not fight the fire — help people evacuate and wait for the BFP.
-                    </Note>
-                  )}
-                  {unusable.length > 0 && (
-                    <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>
-                      ⚠ Do not rely on: {unusable.map(e => `${e.equipment_type} at ${e.floor} — ${e.location_description} (${e.status})`).join('; ')}.
-                    </div>
-                  )}
+                  <ExtinguisherPanel nearest={nearest} building={building} level={level} color={color} />
                 </>
               )}
             </>

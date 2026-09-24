@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, sameBuilding } from '../components/MapEditor'
+import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject } from '../components/MapEditor'
+import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
 
@@ -1352,7 +1353,7 @@ o.name.trim() !== '')
               building={activeEvacDevice.building}
               floor={activeEvacDevice.floor}
               assemblyArea={activeSafeZone?.name||null}
-              extinguishers={equipment.filter(e=>sameBuilding(e.building,activeEvacDevice.building))}
+              nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj?normaliseObject(activeRoomObj):null,objects:mapObjects.map(normaliseObject),equipment})}
               isResponder={myResponses.has(activeEvacDevice.device_id)}
               onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
             />
