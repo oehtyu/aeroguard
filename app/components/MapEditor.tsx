@@ -333,9 +333,18 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
   const buildings = objects.filter(object => object.object_type === 'building')
   // The building a new room will be added to (falls back to the first building, exactly like the
   // dropdown displays). Drives the glow on the map, the dropdown, and addObject().
+  // Devices and extinguishers find their building by name, so a building that other blocks share a
+  // name with can't safely hold rooms until it has its own name.
+  const hasSharedName = (b: MapObject) => buildings.some(o => o.map_object_id !== b.map_object_id && sameBuilding(o.name, b.name))
+  const nextBuildingName = () => {
+    let n = buildings.length + 1
+    while (buildings.some(b => sameBuilding(b.name, `Building ${n}`))) n++
+    return `Building ${n}`
+  }
   const targetBuildingId = newType === 'room'
     ? (buildings.find(b => b.map_object_id === newParent)?.map_object_id ?? buildings[0]?.map_object_id ?? null)
     : null
+  const targetBuilding = buildings.find(b => b.map_object_id === targetBuildingId) || null
 
   async function request(method: 'POST' | 'PUT' | 'DELETE', body: any) {
     const response = await fetch('/api/map', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, ...body }) })
@@ -466,10 +475,13 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
       const isRoom = newType === 'room'
       const parentObject = isRoom ? buildings.find(b => b.map_object_id === targetBuildingId) : null
       if (isRoom && !parentObject) { setMessage('Add a building first, then add rooms to it.'); return }
+      if (parentObject && hasSharedName(parentObject)) {
+        setMessage(`More than one building is called "${parentObject.name}". Click the highlighted building on the map and give it its own name first, then add the room.`); return
+      }
       const box = parentObject
         ? roomSpawnBox(parentObject)
         : { x: 80, y: 80, width: newType === 'wall' ? 220 : 140, height: newType === 'wall' ? 20 : 80 }
-      const data: any = await request('POST', { object_type: newType, name: newName.trim() || LABELS[newType], color: COLORS[0], ...box, parent_id: parentObject?.map_object_id ?? null, floor: isRoom ? newFloor : null })
+      const data: any = await request('POST', { object_type: newType, name: newName.trim() || (newType === 'building' ? nextBuildingName() : LABELS[newType]), color: COLORS[0], ...box, parent_id: parentObject?.map_object_id ?? null, floor: isRoom ? newFloor : null })
       const item = normaliseObject(data.data)
       replaceObjects(current => [...current, item]); setSelectedId(item.map_object_id); setNewName('')
       setMessage(isRoom ? `Room added inside ${parentObject!.name}. Drag it into place.` : 'Map item added. Drag it into place.'); void onChanged()
@@ -483,10 +495,16 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
     const current = objectsRef.current.find(item => item.map_object_id === selectedId)
     if (!current) return
     try {
-      await enqueue(() => request('PUT', current))
+      const data: any = await enqueue(() => request('PUT', current))
       await onChanged()
-      setMessage('Saved.')
+      const moved = data?.moved
+      const movedText = moved && (moved.devices || moved.extinguishers)
+        ? ` Moved ${moved.devices} device${moved.devices === 1 ? '' : 's'} and ${moved.extinguishers} extinguisher${moved.extinguishers === 1 ? '' : 's'} to "${current.name}".` : ''
+      setMessage(data?.warning ? `Saved. ${data.warning}` : `Saved.${movedText}`)
     } catch (error: any) {
+      // e.g. the name is already used by another building: put the last saved name back
+      const saved = initialObjects.find(item => item.map_object_id === current.map_object_id)
+      if (saved) replaceObjects(items => items.map(item => item.map_object_id === current.map_object_id ? { ...item, name: saved.name } : item))
       setMessage(error.message)
     }
   }
@@ -510,8 +528,13 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
           {newType === 'room' && <>
             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Building</label>
             <select value={targetBuildingId ?? ''} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
-              {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}
+              {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}{hasSharedName(b) ? '  ⚠ shared name' : ''}</option>)}
             </select>
+            {targetBuilding && hasSharedName(targetBuilding) && (
+              <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.4)', color: '#facc15', fontSize: '.7rem', lineHeight: 1.4 }}>
+                Other buildings are also called “{targetBuilding.name}”. Click the highlighted building on the map and rename it (under “Selected”) before adding rooms, so devices and extinguishers can tell them apart.
+              </div>
+            )}
             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Floor</label>
             <input value={newFloor} onChange={e => setNewFloor(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
           </>}

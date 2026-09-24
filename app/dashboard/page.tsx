@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject } from '../components/MapEditor'
+import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject, sameBuilding } from '../components/MapEditor'
 import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
@@ -234,6 +234,23 @@ function buildExtOptions(building:string, mapObjects:MapObject[], currentKey?:st
   }
   return opts
 }
+
+// Building choices for the Device / Extinguisher forms: one entry per name. A name that several map
+// blocks share while one of them holds rooms is 'ambiguous' (their rooms would be mixed together), so
+// it is shown but can't be picked until the buildings are given their own names in the Map Editor.
+function buildingChoices(mapObjects:MapObject[]): { name:string; ambiguous:boolean; hasRooms:boolean }[] {
+  const blocks=mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='')
+  const withRooms=new Set(mapObjects.filter(o=>o.object_type==='room'&&o.parent_id!=null).map(o=>Number(o.parent_id)))
+  const out:{ name:string; ambiguous:boolean; hasRooms:boolean }[]=[]
+  for(const b of blocks){
+    if(out.some(c=>c.name===b.name)) continue
+    const group=blocks.filter(o=>sameBuilding(o.name,b.name))
+    out.push({ name:b.name, ambiguous:group.length>1&&group.some(o=>withRooms.has(Number(o.map_object_id))), hasRooms:group.some(o=>withRooms.has(Number(o.map_object_id))) })
+  }
+  return out
+}
+const firstUsableBuilding=(choices:{ name:string; ambiguous:boolean; hasRooms:boolean }[])=>
+  (choices.find(c=>!c.ambiguous&&c.hasRooms)||choices.find(c=>!c.ambiguous))?.name||''
 
 // ── UI HELPERS ────────────────────────────────────────────────
 const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px',justifySelf:'start',width:'fit-content'}
@@ -1181,8 +1198,8 @@ o.name.trim() !== '')
   }))
   // Extinguisher locations come from the live map (rooms in the chosen building),
   // so new rooms/buildings added in the Map Editor become assignable automatically.
-  const mapBuildingNames = mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='').map(o=>o.name)
-  const extBuildingOptions = mapBuildingNames.length?mapBuildingNames:BUILDINGS_LIST
+  const buildingOptions = buildingChoices(mapObjects)
+  const extBuildingOptions = buildingOptions.length?buildingOptions.map(c=>c.name):BUILDINGS_LIST
   const currentExtOptions = buildExtOptions(form.building, mapObjects, form.extKey)
 
   return (
@@ -1658,10 +1675,10 @@ o.name.trim() !== '')
                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding = mapBuildings[0]?.name || ''
+                  const defaultBuilding = firstUsableBuilding(buildingOptions)
 const defaultRoom = mapObjects.find(
   o => o.object_type === 'room' &&
-o.parent_name === form.building &&
+o.parent_name === defaultBuilding &&
 o.name.trim().toLowerCase() !== 'room' &&
 o.name.trim() !== ''
 )
@@ -1712,7 +1729,7 @@ o.name.trim() !== ''
               <div style={{display:'flex',marginBottom:16}}>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding=extBuildingOptions[0]
+                  const defaultBuilding=firstUsableBuilding(buildingOptions)||extBuildingOptions[0]
                   const defaultExt=buildExtOptions(defaultBuilding,mapObjects)[0]
                   setEditId(null)
                   setForm({equipment_type:'ABC',building:defaultBuilding,extKey:defaultExt?`${defaultExt.floor}|${defaultExt.desc}`:'',status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
@@ -1872,7 +1889,7 @@ o.name.trim() !== ''
                       const b=e.target.value
                       const firstRoom = mapObjects.find(
   o => o.object_type === 'room' &&
-o.parent_name === form.building &&
+o.parent_name === b &&
 o.name.trim().toLowerCase() !== 'room' &&
 o.name.trim() !== ''
 )
@@ -1884,9 +1901,9 @@ setForm({
                       setFormErrors({...formErrors, building:'', roomKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {mapBuildings.map(b => (
-  <option key={b.map_object_id} value={b.name}>
-    {b.name}
+                    {buildingOptions.map(c => (
+  <option key={c.name} value={c.name} disabled={c.ambiguous}>
+    {c.ambiguous ? `${c.name} — shared name, rename in Map Editor` : c.name}
   </option>
 ))}
                   </select>
@@ -1954,7 +1971,9 @@ setForm({
                       setFormErrors({...formErrors, building:'', extKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
+                    {buildingOptions.length
+                      ? buildingOptions.map(c=><option key={c.name} value={c.name} disabled={c.ambiguous}>{c.ambiguous?`${c.name} — shared name, rename in Map Editor`:c.name}</option>)
+                      : extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
                   </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>

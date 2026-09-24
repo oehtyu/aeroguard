@@ -1,0 +1,298 @@
+--- a/app/components/MapEditor.tsx
++++ b/app/components/MapEditor.tsx
+@@ -333,9 +333,18 @@
+   const buildings = objects.filter(object => object.object_type === 'building')
+   // The building a new room will be added to (falls back to the first building, exactly like the
+   // dropdown displays). Drives the glow on the map, the dropdown, and addObject().
++  // Devices and extinguishers find their building by name, so a building that other blocks share a
++  // name with can't safely hold rooms until it has its own name.
++  const hasSharedName = (b: MapObject) => buildings.some(o => o.map_object_id !== b.map_object_id && sameBuilding(o.name, b.name))
++  const nextBuildingName = () => {
++    let n = buildings.length + 1
++    while (buildings.some(b => sameBuilding(b.name, `Building ${n}`))) n++
++    return `Building ${n}`
++  }
+   const targetBuildingId = newType === 'room'
+     ? (buildings.find(b => b.map_object_id === newParent)?.map_object_id ?? buildings[0]?.map_object_id ?? null)
+     : null
++  const targetBuilding = buildings.find(b => b.map_object_id === targetBuildingId) || null
+ 
+   async function request(method: 'POST' | 'PUT' | 'DELETE', body: any) {
+     const response = await fetch('/api/map', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_id: adminId, ...body }) })
+@@ -466,10 +475,13 @@
+       const isRoom = newType === 'room'
+       const parentObject = isRoom ? buildings.find(b => b.map_object_id === targetBuildingId) : null
+       if (isRoom && !parentObject) { setMessage('Add a building first, then add rooms to it.'); return }
++      if (parentObject && hasSharedName(parentObject)) {
++        setMessage(`More than one building is called "${parentObject.name}". Click the highlighted building on the map and give it its own name first, then add the room.`); return
++      }
+       const box = parentObject
+         ? roomSpawnBox(parentObject)
+         : { x: 80, y: 80, width: newType === 'wall' ? 220 : 140, height: newType === 'wall' ? 20 : 80 }
+-      const data: any = await request('POST', { object_type: newType, name: newName.trim() || LABELS[newType], color: COLORS[0], ...box, parent_id: parentObject?.map_object_id ?? null, floor: isRoom ? newFloor : null })
++      const data: any = await request('POST', { object_type: newType, name: newName.trim() || (newType === 'building' ? nextBuildingName() : LABELS[newType]), color: COLORS[0], ...box, parent_id: parentObject?.map_object_id ?? null, floor: isRoom ? newFloor : null })
+       const item = normaliseObject(data.data)
+       replaceObjects(current => [...current, item]); setSelectedId(item.map_object_id); setNewName('')
+       setMessage(isRoom ? `Room added inside ${parentObject!.name}. Drag it into place.` : 'Map item added. Drag it into place.'); void onChanged()
+@@ -483,10 +495,16 @@
+     const current = objectsRef.current.find(item => item.map_object_id === selectedId)
+     if (!current) return
+     try {
+-      await enqueue(() => request('PUT', current))
++      const data: any = await enqueue(() => request('PUT', current))
+       await onChanged()
+-      setMessage('Saved.')
++      const moved = data?.moved
++      const movedText = moved && (moved.devices || moved.extinguishers)
++        ? ` Moved ${moved.devices} device${moved.devices === 1 ? '' : 's'} and ${moved.extinguishers} extinguisher${moved.extinguishers === 1 ? '' : 's'} to "${current.name}".` : ''
++      setMessage(data?.warning ? `Saved. ${data.warning}` : `Saved.${movedText}`)
+     } catch (error: any) {
++      // e.g. the name is already used by another building: put the last saved name back
++      const saved = initialObjects.find(item => item.map_object_id === current.map_object_id)
++      if (saved) replaceObjects(items => items.map(item => item.map_object_id === current.map_object_id ? { ...item, name: saved.name } : item))
+       setMessage(error.message)
+     }
+   }
+@@ -510,8 +528,13 @@
+           {newType === 'room' && <>
+             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Building</label>
+             <select value={targetBuildingId ?? ''} onChange={e => setNewParent(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}>
+-              {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}</option>)}
++              {buildings.map(b => <option key={b.map_object_id} value={b.map_object_id}>{b.name}{hasSharedName(b) ? '  ⚠ shared name' : ''}</option>)}
+             </select>
++            {targetBuilding && hasSharedName(targetBuilding) && (
++              <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.4)', color: '#facc15', fontSize: '.7rem', lineHeight: 1.4 }}>
++                Other buildings are also called “{targetBuilding.name}”. Click the highlighted building on the map and rename it (under “Selected”) before adding rooms, so devices and extinguishers can tell them apart.
++              </div>
++            )}
+             <label style={{ display: 'block', fontSize: '.7rem', color: 'var(--muted)', marginTop: 8 }}>Floor</label>
+             <input value={newFloor} onChange={e => setNewFloor(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 9, background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }} />
+           </>}
+--- a/app/components/extinguishers.ts
++++ b/app/components/extinguishers.ts
+@@ -7,7 +7,11 @@
+ // ─────────────────────────────────────────────────────────────
+ 
+ // "COAS Building" (equipment record) and "COAS" (map block) are the same place.
+-const normName = (v: unknown) => String(v ?? '').toLowerCase().replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
++// A block named just "Building" would normalise to '' and never match anything, so fall back to the full name.
++const normName = (v: unknown) => {
++  const lower = String(v ?? '').toLowerCase()
++  return lower.replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim() || lower.replace(/[^a-z0-9]+/g, ' ').trim()
++}
+ export const sameBuilding = (a: unknown, b: unknown) => normName(a) === normName(b) && normName(a) !== ''
+ 
+ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+--- a/app/api/map/route.ts
++++ b/app/api/map/route.ts
+@@ -1,5 +1,6 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import sql from '@/lib/db'
++import { sameBuilding } from '@/app/components/extinguishers'
+ 
+ export const dynamic = 'force-dynamic'
+ export const revalidate = 0
+@@ -14,6 +15,53 @@
+   return rows[0]?.user_type === 'Admin'
+ }
+ 
++// Devices, extinguishers and users refer to a building by NAME, so a building that holds rooms must
++// have a name no other building uses — otherwise their rooms and locations get mixed together.
++// Plain decorative blocks (Post, Trees, ...) may still share a name.
++async function nameClash(ownId: number, name: string, ownHasRooms: boolean) {
++  const others = await sql`
++    SELECT m.map_object_id, m.name,
++           (SELECT COUNT(*) FROM map_objects r WHERE r.parent_id = m.map_object_id)::int AS rooms
++    FROM map_objects m
++    WHERE m.object_type = 'building' AND m.map_object_id <> ${ownId}
++  `
++  const same = others.filter((o: any) => sameBuilding(o.name, name))
++  if (!same.length) return null
++  return ownHasRooms || same.some((o: any) => o.rooms > 0) ? same[0] : null
++}
++const clashMessage = (name: string) =>
++  `Another building is already called "${name}". A building with rooms needs its own unique name so devices and extinguishers know which building they belong to.`
++
++// When a building is renamed, move its devices / extinguishers / faculty with it (they store the
++// building name as text). If the old name was shared with another building, only the records that
++// clearly belong to THIS building's rooms are moved.
++async function carryRename(id: number, oldName: string, newName: string) {
++  const norm = (v: unknown) => String(v ?? '').trim().toLowerCase()
++  const rooms = await sql`SELECT name, floor FROM map_objects WHERE parent_id=${id}`
++  const others = await sql`SELECT name FROM map_objects WHERE object_type='building' AND map_object_id <> ${id}`
++  const oldIsShared = others.some((o: any) => sameBuilding(o.name, oldName))
++  const equipment = await sql`SELECT equipment_id, building, floor, location_description FROM fire_equipment`
++  const ownEquipment = equipment.filter((e: any) => sameBuilding(e.building, oldName))
++  let devices = 0, extinguishers = 0
++
++  if (!oldIsShared) {
++    devices = (await sql`UPDATE devices SET building=${newName} WHERE building=${oldName} RETURNING device_id`).length
++    for (const e of ownEquipment) { await sql`UPDATE fire_equipment SET building=${newName} WHERE equipment_id=${e.equipment_id}`; extinguishers++ }
++    try { await sql`UPDATE users SET building=${newName} WHERE building=${oldName}` } catch { /* users.building is optional */ }
++  } else {
++    for (const r of rooms) {
++      const floor = r.floor || '1F'
++      devices += (await sql`UPDATE devices SET building=${newName} WHERE building=${oldName} AND room=${r.name} AND floor=${floor} RETURNING device_id`).length
++      for (const e of ownEquipment) {
++        if (norm(e.floor) === norm(floor) && norm(e.location_description) === norm(`Near ${r.name}`)) {
++          await sql`UPDATE fire_equipment SET building=${newName} WHERE equipment_id=${e.equipment_id}`; extinguishers++
++        }
++      }
++    }
++  }
++  return { devices, extinguishers }
++}
++
+ function validBox(data: any) {
+   const values = [data.x, data.y, data.width, data.height].map(Number)
+   if (values.some(Number.isNaN)) return false
+@@ -46,6 +94,16 @@
+     if (data.object_type === 'room' && !data.parent_id) {
+       return NextResponse.json({ success: false, message: 'A room must belong to a building.' }, { status: 400 })
+     }
++    if (data.object_type === 'building' && await nameClash(0, data.name.trim(), false)) {
++      return NextResponse.json({ success: false, message: clashMessage(data.name.trim()) }, { status: 409 })
++    }
++    if (data.object_type === 'room') {
++      const parent = (await sql`SELECT name FROM map_objects WHERE map_object_id=${Number(data.parent_id)} AND object_type='building'`)[0]
++      if (!parent) return NextResponse.json({ success: false, message: 'That building no longer exists.' }, { status: 400 })
++      if (await nameClash(Number(data.parent_id), parent.name, true)) {
++        return NextResponse.json({ success: false, message: `More than one building is called "${parent.name}". Rename this building to something unique first (click it on the map, then edit its name), then add the room.` }, { status: 409 })
++      }
++    }
+     const rows = await sql`
+       INSERT INTO map_objects (object_type, name, color, x, y, width, height, parent_id, floor)
+       VALUES (${data.object_type}, ${data.name.trim()}, ${data.color || '#1e3a5f'},
+@@ -66,6 +124,16 @@
+     if (!data.map_object_id || !TYPES.has(data.object_type) || !String(data.name || '').trim() || !validBox(data)) {
+       return NextResponse.json({ success: false, message: 'Invalid map object.' }, { status: 400 })
+     }
++    const id = Number(data.map_object_id)
++    const newName = String(data.name).trim()
++    const before = (await sql`SELECT object_type, name FROM map_objects WHERE map_object_id=${id}`)[0]
++    const renamedBuilding = data.object_type === 'building' && before?.object_type === 'building' && before.name !== newName
++    if (renamedBuilding) {
++      const hasRooms = (await sql`SELECT 1 FROM map_objects WHERE parent_id=${id} LIMIT 1`).length > 0
++      if (await nameClash(id, newName, hasRooms)) {
++        return NextResponse.json({ success: false, message: clashMessage(newName) }, { status: 409 })
++      }
++    }
+     const rows = await sql`
+       UPDATE map_objects
+       SET object_type=${data.object_type}, name=${data.name.trim()}, color=${data.color || '#1e3a5f'},
+@@ -77,7 +145,13 @@
+       WHERE map_object_id=${Number(data.map_object_id)}
+       RETURNING *
+     `
+-    return NextResponse.json({ success: true, data: rows[0] })
++    let moved: { devices: number; extinguishers: number } | undefined
++    let warning: string | undefined
++    if (renamedBuilding) {
++      try { moved = await carryRename(id, before.name, newName) }
++      catch (err: any) { console.error('[MAP] rename carry-over failed:', err); warning = 'Renamed, but existing devices/extinguishers could not be moved to the new name automatically.' }
++    }
++    return NextResponse.json({ success: true, data: rows[0], moved, warning })
+   } catch (error: any) {
+     return NextResponse.json({ success: false, message: error.message })
+   }
+--- a/app/dashboard/page.tsx
++++ b/app/dashboard/page.tsx
+@@ -3,7 +3,7 @@
+ import { useRouter } from 'next/navigation'
+ import PushSubscribe from '../components/PushSubscribe'
+ import { createPortal } from 'react-dom'
+-import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject } from '../components/MapEditor'
++import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject, sameBuilding } from '../components/MapEditor'
+ import { nearestExtinguishers } from '../components/extinguishers'
+ import { planEvacuation } from '../components/evacuation'
+ import GuidanceCard from '../components/Guidance'
+@@ -235,6 +235,23 @@
+   return opts
+ }
+ 
++// Building choices for the Device / Extinguisher forms: one entry per name. A name that several map
++// blocks share while one of them holds rooms is 'ambiguous' (their rooms would be mixed together), so
++// it is shown but can't be picked until the buildings are given their own names in the Map Editor.
++function buildingChoices(mapObjects:MapObject[]): { name:string; ambiguous:boolean; hasRooms:boolean }[] {
++  const blocks=mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='')
++  const withRooms=new Set(mapObjects.filter(o=>o.object_type==='room'&&o.parent_id!=null).map(o=>Number(o.parent_id)))
++  const out:{ name:string; ambiguous:boolean; hasRooms:boolean }[]=[]
++  for(const b of blocks){
++    if(out.some(c=>c.name===b.name)) continue
++    const group=blocks.filter(o=>sameBuilding(o.name,b.name))
++    out.push({ name:b.name, ambiguous:group.length>1&&group.some(o=>withRooms.has(Number(o.map_object_id))), hasRooms:group.some(o=>withRooms.has(Number(o.map_object_id))) })
++  }
++  return out
++}
++const firstUsableBuilding=(choices:{ name:string; ambiguous:boolean; hasRooms:boolean }[])=>
++  (choices.find(c=>!c.ambiguous&&c.hasRooms)||choices.find(c=>!c.ambiguous))?.name||''
++
+ // ── UI HELPERS ────────────────────────────────────────────────
+ const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px',justifySelf:'start',width:'fit-content'}
+ 
+@@ -1181,8 +1198,8 @@
+   }))
+   // Extinguisher locations come from the live map (rooms in the chosen building),
+   // so new rooms/buildings added in the Map Editor become assignable automatically.
+-  const mapBuildingNames = mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='').map(o=>o.name)
+-  const extBuildingOptions = mapBuildingNames.length?mapBuildingNames:BUILDINGS_LIST
++  const buildingOptions = buildingChoices(mapObjects)
++  const extBuildingOptions = buildingOptions.length?buildingOptions.map(c=>c.name):BUILDINGS_LIST
+   const currentExtOptions = buildExtOptions(form.building, mapObjects, form.extKey)
+ 
+   return (
+@@ -1658,10 +1675,10 @@
+                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
+                 <div style={{flex:1}}/>
+                 <button onClick={()=>{
+-                  const defaultBuilding = mapBuildings[0]?.name || ''
++                  const defaultBuilding = firstUsableBuilding(buildingOptions)
+ const defaultRoom = mapObjects.find(
+   o => o.object_type === 'room' &&
+-o.parent_name === form.building &&
++o.parent_name === defaultBuilding &&
+ o.name.trim().toLowerCase() !== 'room' &&
+ o.name.trim() !== ''
+ )
+@@ -1712,7 +1729,7 @@
+               <div style={{display:'flex',marginBottom:16}}>
+                 <div style={{flex:1}}/>
+                 <button onClick={()=>{
+-                  const defaultBuilding=extBuildingOptions[0]
++                  const defaultBuilding=firstUsableBuilding(buildingOptions)||extBuildingOptions[0]
+                   const defaultExt=buildExtOptions(defaultBuilding,mapObjects)[0]
+                   setEditId(null)
+                   setForm({equipment_type:'ABC',building:defaultBuilding,extKey:defaultExt?`${defaultExt.floor}|${defaultExt.desc}`:'',status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
+@@ -1872,7 +1889,7 @@
+                       const b=e.target.value
+                       const firstRoom = mapObjects.find(
+   o => o.object_type === 'room' &&
+-o.parent_name === form.building &&
++o.parent_name === b &&
+ o.name.trim().toLowerCase() !== 'room' &&
+ o.name.trim() !== ''
+ )
+@@ -1884,9 +1901,9 @@
+                       setFormErrors({...formErrors, building:'', roomKey:''})
+                     }}
+                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+-                    {mapBuildings.map(b => (
+-  <option key={b.map_object_id} value={b.name}>
+-    {b.name}
++                    {buildingOptions.map(c => (
++  <option key={c.name} value={c.name} disabled={c.ambiguous}>
++    {c.ambiguous ? `${c.name} — shared name, rename in Map Editor` : c.name}
+   </option>
+ ))}
+                   </select>
+@@ -1954,7 +1971,9 @@
+                       setFormErrors({...formErrors, building:'', extKey:''})
+                     }}
+                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
+-                    {extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
++                    {buildingOptions.length
++                      ? buildingOptions.map(c=><option key={c.name} value={c.name} disabled={c.ambiguous}>{c.ambiguous?`${c.name} — shared name, rename in Map Editor`:c.name}</option>)
++                      : extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
+                   </select>
+                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
+                 </div>

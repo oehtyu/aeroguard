@@ -7,7 +7,11 @@ import type { MapObject } from './MapEditor'
 // ─────────────────────────────────────────────────────────────
 
 // "COAS Building" (equipment record) and "COAS" (map block) are the same place.
-const normName = (v: unknown) => String(v ?? '').toLowerCase().replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+// A block named just "Building" would normalise to '' and never match anything, so fall back to the full name.
+const normName = (v: unknown) => {
+  const lower = String(v ?? '').toLowerCase()
+  return lower.replace(/\bbuilding\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim() || lower.replace(/[^a-z0-9]+/g, ' ').trim()
+}
 export const sameBuilding = (a: unknown, b: unknown) => normName(a) === normName(b) && normName(a) !== ''
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
