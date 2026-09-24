@@ -1,0 +1,427 @@
+diff --git a/app/api/users/me/route.ts b/app/api/users/me/route.ts
+new file mode 100644
+index 0000000..e8cdc54
+--- /dev/null
++++ b/app/api/users/me/route.ts
+@@ -0,0 +1,23 @@
++import { NextRequest, NextResponse } from 'next/server';
++import sql from '@/lib/db';
++
++export const dynamic = 'force-dynamic';
++export const revalidate = 0;
++
++// The signed-in browser polls this so an admin's change (role, name, phone, ...)
++// or a deleted account shows up within seconds, without logging out and in.
++export async function GET(req: NextRequest) {
++  try {
++    const id = Number(req.nextUrl.searchParams.get('user_id'));
++    if (!id) return NextResponse.json({ success: false, message: 'user_id required.' }, { status: 400 });
++
++    const rows = await sql`
++      SELECT user_id, username, full_name, user_type, email, phone, building
++      FROM users WHERE user_id=${id}
++    `;
++    if (rows.length === 0) return NextResponse.json({ success: false, deleted: true, message: 'Account no longer exists.' });
++    return NextResponse.json({ success: true, user: rows[0] });
++  } catch (err: any) {
++    return NextResponse.json({ success: false, message: err.message });
++  }
++}
+diff --git a/app/components/evacuation.ts b/app/components/evacuation.ts
+index ba5c8f0..852fd61 100644
+--- a/app/components/evacuation.ts
++++ b/app/components/evacuation.ts
+@@ -12,6 +12,12 @@ import type { MapObject } from './MapEditor'
+ //   • every Assembly Area is tried and the one with the SHORTEST WALKABLE
+ //     route wins (not just the closest in a straight line)
+ // Result is straightened so it reads as a clean route, not a staircase.
++//
++// Performance: one Dijkstra sweep from the alert covers every assembly area at
++// once, each grid cell is settled exactly once, and the obstacle grid is cached
++// until the map's geometry changes. A flag that is unreachable (e.g. dropped on
++// top of a building) is snapped to the nearest reachable spot instead of being
++// searched for. Worst case is a few milliseconds of work, never a stall.
+ // ─────────────────────────────────────────────────────────────
+ 
+ const W = 1140
+@@ -34,141 +40,205 @@ export function pinPoint(o: MapObject): Pt {
+   return { cx: n(o.pin_x, b.x + b.w / 2), cy: n(o.pin_y, b.y + b.h / 2) }
+ }
+ 
+-// tiny binary min-heap keyed by f-score
++// tiny binary min-heap keyed by distance
+ class Heap {
+-  private a: { f: number; i: number }[] = []
+-  get size() { return this.a.length }
+-  push(f: number, i: number) {
+-    const a = this.a; a.push({ f, i })
+-    let k = a.length - 1
+-    while (k > 0) { const p = (k - 1) >> 1; if (a[p].f <= a[k].f) break; [a[p], a[k]] = [a[k], a[p]]; k = p }
++  private d: number[] = []
++  private v: number[] = []
++  get size() { return this.d.length }
++  push(dist: number, item: number) {
++    const d = this.d, v = this.v
++    let k = d.length; d.push(dist); v.push(item)
++    while (k > 0) {
++      const p = (k - 1) >> 1
++      if (d[p] <= d[k]) break
++      ;[d[p], d[k]] = [d[k], d[p]]; [v[p], v[k]] = [v[k], v[p]]; k = p
++    }
+   }
+-  pop() {
+-    const a = this.a; const top = a[0]; const last = a.pop()!
+-    if (a.length) {
+-      a[0] = last
++  pop(): { dist: number; item: number } {
++    const d = this.d, v = this.v
++    const top = { dist: d[0], item: v[0] }
++    const ld = d.pop()!, lv = v.pop()!
++    if (d.length) {
++      d[0] = ld; v[0] = lv
+       let k = 0
+       for (;;) {
+         const l = 2 * k + 1, r = l + 1; let m = k
+-        if (l < a.length && a[l].f < a[m].f) m = l
+-        if (r < a.length && a[r].f < a[m].f) m = r
++        if (l < d.length && d[l] < d[m]) m = l
++        if (r < d.length && d[r] < d[m]) m = r
+         if (m === k) break
+-        ;[a[m], a[k]] = [a[k], a[m]]; k = m
++        ;[d[m], d[k]] = [d[k], d[m]]; [v[m], v[k]] = [v[k], v[m]]; k = m
+       }
+     }
+     return top
+   }
+ }
+ 
+-const cache = new Map<string, EvacPlan | null>()
+-
+-export function planEvacuation(building: MapObject | undefined | null, room: MapObject | undefined | null, all: MapObject[]): EvacPlan | null {
+-  if (!building) return null
+-  const key = [building.map_object_id, room?.map_object_id ?? '', ...all.map(o =>
+-    `${o.map_object_id}:${o.object_type}:${n(o.x)},${n(o.y)},${n(o.width)},${n(o.height)},${o.pin_x ?? ''},${o.pin_y ?? ''}`)].join('|')
+-  if (cache.has(key)) return cache.get(key)!
+-  let plan: EvacPlan | null = null
+-  for (const pad of PADS) { plan = planWithPad(building, room, all, pad); if (plan) break }
+-  cache.set(key, plan)
+-  if (cache.size > 12) cache.delete(cache.keys().next().value as string)
+-  return plan
+-}
+-
+-function planWithPad(building: MapObject, room: MapObject | null | undefined, all: MapObject[], PAD: number): EvacPlan | null {
+-  const zones = all.filter(o => o.object_type === 'safe_zone')
+-  if (zones.length === 0) return null
++const cols = Math.ceil(W / CELL)
++const rows = Math.ceil(H / CELL)
++const cellIndex = (c: number, r: number) => r * cols + c
++const cellOf = (x: number, y: number) => ({
++  c: Math.min(cols - 1, Math.max(0, Math.floor(x / CELL))),
++  r: Math.min(rows - 1, Math.max(0, Math.floor(y / CELL))),
++})
++
++type Grid = { blocked: Uint8Array; cost: Float64Array; solidAt: (x: number, y: number) => boolean }
++
++const geometry = (o: MapObject) => `${o.map_object_id}:${n(o.x)},${n(o.y)},${n(o.width)},${n(o.height)}`
++
++// The obstacle grid depends only on geometry (not on flags or which room is alerting),
++// so it is cached and reused while an admin drags flags around.
++const gridCache = new Map<string, Grid>()
++function gridFor(building: MapObject, all: MapObject[], pad: number): Grid {
++  const solidsObj = all.filter(o => (o.object_type === 'building' && o.map_object_id !== building.map_object_id) || o.object_type === 'wall')
++  const gatesObj = all.filter(o => o.object_type === 'gate')
++  const treesObj = all.filter(o => o.object_type === 'tree_area')
++  const key = `${pad}|${geometry(building)}|` + [...solidsObj, ...gatesObj, ...treesObj].map(geometry).join('|')
++  const hit = gridCache.get(key)
++  if (hit) return hit
+ 
+   const origin = box(building)
+-  const solids = all.filter(o => (o.object_type === 'building' && o.map_object_id !== building.map_object_id) || o.object_type === 'wall').map(box)
+-  const gates = all.filter(o => o.object_type === 'gate').map(box)
+-  const trees = all.filter(o => o.object_type === 'tree_area').map(box)
++  const solids = solidsObj.map(box), gates = gatesObj.map(box), trees = treesObj.map(box)
+ 
+   // Solid = inside a padded building/wall, unless it's the origin building or a gate opening.
+   const solidAt = (x: number, y: number) => {
+     if (x < 0 || y < 0 || x > W || y > H) return true
+     if (inside(origin, x, y)) return false
+-    if (gates.some(g => inside(g, x, y, PAD))) return false
+-    return solids.some(s => inside(s, x, y, PAD))
++    for (let i = 0; i < gates.length; i++) if (inside(gates[i], x, y, pad)) return false
++    for (let i = 0; i < solids.length; i++) if (inside(solids[i], x, y, pad)) return true
++    return false
+   }
+ 
+-  const cols = Math.ceil(W / CELL), rows = Math.ceil(H / CELL)
+-  const idx = (c: number, r: number) => r * cols + c
+-  const cellOf = (x: number, y: number) => ({ c: Math.min(cols - 1, Math.max(0, Math.floor(x / CELL))), r: Math.min(rows - 1, Math.max(0, Math.floor(y / CELL))) })
+-
+   const blocked = new Uint8Array(cols * rows)
+-  const cost = new Float32Array(cols * rows).fill(1)
++  const cost = new Float64Array(cols * rows).fill(1)
+   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+     const x = (c + 0.5) * CELL, y = (r + 0.5) * CELL
+-    if (solidAt(x, y)) blocked[idx(c, r)] = 1
+-    else if (trees.some(t => inside(t, x, y))) cost[idx(c, r)] = TREE_COST
++    if (solidAt(x, y)) blocked[cellIndex(c, r)] = 1
++    else for (let i = 0; i < trees.length; i++) if (inside(trees[i], x, y)) { cost[cellIndex(c, r)] = TREE_COST; break }
+   }
++  const grid = { blocked, cost, solidAt }
++  gridCache.set(key, grid)
++  if (gridCache.size > 12) gridCache.delete(gridCache.keys().next().value as string)
++  return grid
++}
+ 
+-  const startPt: Pt = room ? { cx: n(room.x) + n(room.width, 60) / 2, cy: n(room.y) + n(room.height, 30) / 2 }
+-                            : { cx: origin.x + origin.w / 2, cy: origin.y + origin.h / 2 }
+-  const s = cellOf(startPt.cx, startPt.cy)
+-
+-  // A* from the start to one goal; returns cell path + total cost, or null.
+-  const search = (goalPt: Pt) => {
+-    const g = cellOf(goalPt.cx, goalPt.cy)
+-    // the flag/pin itself must be reachable even if it was dropped near an edge
+-    const forced: number[] = []
++// One sweep from the start over the whole walkable area. Every cell is settled once.
++function sweep(grid: Grid, start: { c: number; r: number }) {
++  const N = cols * rows
++  const dist = new Float64Array(N).fill(Infinity)
++  const prev = new Int32Array(N).fill(-1)
++  const done = new Uint8Array(N)
++  const heap = new Heap()
++  const s0 = cellIndex(start.c, start.r)
++  dist[s0] = 0; heap.push(0, s0)
++  while (heap.size) {
++    const { dist: d, item: i } = heap.pop()
++    if (done[i]) continue
++    done[i] = 1
++    const c = i % cols, r = (i - c) / cols
+     for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+-      const c = g.c + dc, r = g.r + dr
+-      if (c >= 0 && r >= 0 && c < cols && r < rows && blocked[idx(c, r)]) { forced.push(idx(c, r)); blocked[idx(c, r)] = 0 }
++      if (!dc && !dr) continue
++      const nc = c + dc, nr = r + dr
++      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue
++      const ni = cellIndex(nc, nr)
++      if (done[ni] || grid.blocked[ni]) continue
++      // never cut a corner diagonally past a solid
++      if (dc && dr && (grid.blocked[cellIndex(c + dc, r)] || grid.blocked[cellIndex(c, r + dr)])) continue
++      const cand = d + (dc && dr ? Math.SQRT2 : 1) * grid.cost[ni]
++      if (cand < dist[ni]) { dist[ni] = cand; prev[ni] = i; heap.push(cand, ni) }
+     }
+-    const N = cols * rows
+-    const best = new Float32Array(N).fill(Infinity)
+-    const from = new Int32Array(N).fill(-1)
+-    const heap = new Heap()
+-    const h = (c: number, r: number) => { const dx = Math.abs(c - g.c), dy = Math.abs(r - g.r); return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy) }
+-    best[idx(s.c, s.r)] = 0; heap.push(h(s.c, s.r), idx(s.c, s.r))
+-    let found = false
+-    while (heap.size) {
+-      const { i } = heap.pop()
+-      const c = i % cols, r = (i - c) / cols
+-      if (c === g.c && r === g.r) { found = true; break }
+-      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+-        if (!dc && !dr) continue
+-        const nc = c + dc, nr = r + dr
+-        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue
+-        const ni = idx(nc, nr)
+-        if (blocked[ni] && !(nc === s.c && nr === s.r)) continue
+-        // no cutting corners diagonally past a solid
+-        if (dc && dr && (blocked[idx(c + dc, r)] || blocked[idx(c, r + dr)])) continue
+-        const step = (dc && dr ? Math.SQRT2 : 1) * cost[ni]
+-        const cand = best[i] + step
+-        if (cand < best[ni]) { best[ni] = cand; from[ni] = i; heap.push(cand + h(nc, nr), ni) }
+-      }
++  }
++  return { dist, prev }
++}
++
++// Where should the route end for this assembly area? At the flag if it can be
++// reached; otherwise (flag dropped on a building/wall) at the reachable spot
++// inside the area — or just next to the flag — that is closest to it.
++function goalFor(zone: MapObject, dist: Float64Array): { idx: number; pt: Pt } | null {
++  const pin = pinPoint(zone)
++  const pc = cellOf(pin.cx, pin.cy)
++  const pi = cellIndex(pc.c, pc.r)
++  if (dist[pi] < Infinity) return { idx: pi, pt: pin }
++
++  const b = box(zone)
++  const scan = (c0: number, c1: number, r0: number, r1: number) => {
++    let best = -1, bestD = Infinity
++    for (let r = Math.max(0, r0); r <= Math.min(rows - 1, r1); r++) for (let c = Math.max(0, c0); c <= Math.min(cols - 1, c1); c++) {
++      const i = cellIndex(c, r)
++      if (dist[i] === Infinity) continue
++      const d = Math.hypot((c + 0.5) * CELL - pin.cx, (r + 0.5) * CELL - pin.cy)
++      if (d < bestD) { bestD = d; best = i }
+     }
+-    forced.forEach(i => { blocked[i] = 1 })
+-    if (!found) return null
+-    const cells: Pt[] = []
+-    for (let i = idx(g.c, g.r); i !== -1; i = from[i]) { const c = i % cols, r = (i - c) / cols; cells.push({ cx: (c + 0.5) * CELL, cy: (r + 0.5) * CELL }) }
+-    cells.reverse()
+-    return { cells, total: best[idx(g.c, g.r)] }
++    return best
+   }
++  let best = scan(Math.floor(b.x / CELL), Math.floor((b.x + b.w) / CELL), Math.floor(b.y / CELL), Math.floor((b.y + b.h) / CELL))
++  if (best < 0) best = scan(pc.c - 6, pc.c + 6, pc.r - 6, pc.r + 6)
++  if (best < 0) return null
++  const c = best % cols, r = (best - c) / cols
++  return { idx: best, pt: { cx: (c + 0.5) * CELL, cy: (r + 0.5) * CELL } }
++}
++
++const planCache = new Map<string, EvacPlan | null>()
++
++export function planEvacuation(building: MapObject | undefined | null, room: MapObject | undefined | null, all: MapObject[]): EvacPlan | null {
++  if (!building) return null
++  const key = [building.map_object_id, room?.map_object_id ?? '', ...all.map(o =>
++    `${o.map_object_id}:${o.object_type}:${n(o.x)},${n(o.y)},${n(o.width)},${n(o.height)},${o.pin_x ?? ''},${o.pin_y ?? ''}`)].join('|')
++  if (planCache.has(key)) return planCache.get(key)!
++
++  let plan: EvacPlan | null = null
++  try {
++    for (const pad of PADS) { plan = planWithPad(building, room, all, pad); if (plan) break }
++  } catch (err) {
++    console.error('[evacuation] route planning failed, using fallback', err)
++    plan = null
++  }
++  planCache.set(key, plan)
++  if (planCache.size > 12) planCache.delete(planCache.keys().next().value as string)
++  return plan
++}
++
++function planWithPad(building: MapObject, room: MapObject | null | undefined, all: MapObject[], pad: number): EvacPlan | null {
++  const zones = all.filter(o => o.object_type === 'safe_zone')
++  if (zones.length === 0) return null
++
++  const grid = gridFor(building, all, pad)
++  const origin = box(building)
++  const startPt: Pt = room ? { cx: n(room.x) + n(room.width, 60) / 2, cy: n(room.y) + n(room.height, 30) / 2 }
++                            : { cx: origin.x + origin.w / 2, cy: origin.y + origin.h / 2 }
++  const start = cellOf(startPt.cx, startPt.cy)
++  // the alerting room is always somewhere you can walk out of
++  const wasBlocked = grid.blocked[cellIndex(start.c, start.r)]
++  grid.blocked[cellIndex(start.c, start.r)] = 0
++  const { dist, prev } = sweep(grid, start)
++  grid.blocked[cellIndex(start.c, start.r)] = wasBlocked
++
++  let best: { zone: MapObject; idx: number; pt: Pt } | null = null
++  for (const zone of zones) {
++    const goal = goalFor(zone, dist)
++    if (goal && (!best || dist[goal.idx] < dist[best.idx])) best = { zone, ...goal }
++  }
++  if (!best) return null
++
++  const cells: Pt[] = []
++  for (let i = best.idx; i !== -1; i = prev[i]) { const c = i % cols, r = (i - c) / cols; cells.push({ cx: (c + 0.5) * CELL, cy: (r + 0.5) * CELL }) }
++  cells.reverse()
++
++  // Keep only the cells where the walk changes direction, then pull the string tight.
++  const raw: Pt[] = [startPt]
++  for (let k = 1; k < cells.length - 1; k++) {
++    const a = cells[k - 1], b = cells[k], c = cells[k + 1]
++    if (Math.sign(b.cx - a.cx) !== Math.sign(c.cx - b.cx) || Math.sign(b.cy - a.cy) !== Math.sign(c.cy - b.cy)) raw.push(b)
++  }
++  raw.push(best.pt)
+ 
+-  // A segment is usable if no sample along it lands in a solid.
+   const clear = (a: Pt, b: Pt) => {
+-    const len = Math.hypot(b.cx - a.cx, b.cy - a.cy)
+-    const steps = Math.max(1, Math.ceil(len / 2))
++    const steps = Math.max(1, Math.ceil(Math.hypot(b.cx - a.cx, b.cy - a.cy) / 3))
+     for (let k = 0; k <= steps; k++) {
+       const t = k / steps
+-      if (solidAt(a.cx + (b.cx - a.cx) * t, a.cy + (b.cy - a.cy) * t)) return false
++      if (grid.solidAt(a.cx + (b.cx - a.cx) * t, a.cy + (b.cy - a.cy) * t)) return false
+     }
+     return true
+   }
+-
+-  let bestPlan: { zone: MapObject; cells: Pt[]; total: number; goal: Pt } | null = null
+-  for (const zone of zones) {
+-    const goal = pinPoint(zone)
+-    const res = search(goal)
+-    if (res && (!bestPlan || res.total < bestPlan.total)) bestPlan = { zone, cells: res.cells, total: res.total, goal }
+-  }
+-  if (!bestPlan) return null
+-
+-  // exact endpoints, then pull the string tight so the route is a few clean legs
+-  const raw = [startPt, ...bestPlan.cells.slice(1, -1), bestPlan.goal]
+   const pts: Pt[] = [raw[0]]
+   let i = 0
+   while (i < raw.length - 1) {
+@@ -176,6 +246,5 @@ function planWithPad(building: MapObject, room: MapObject | null | undefined, al
+     while (j > i + 1 && !clear(raw[i], raw[j])) j--
+     pts.push(raw[j]); i = j
+   }
+-
+-  return { safeZone: bestPlan.zone, points: pts }
++  return { safeZone: best.zone, points: pts }
+ }
+diff --git a/app/dashboard/page.tsx b/app/dashboard/page.tsx
+index 95b3ea1..a0ee9b4 100644
+--- a/app/dashboard/page.tsx
++++ b/app/dashboard/page.tsx
+@@ -679,6 +679,8 @@ export default function Dashboard() {
+     const incFilterRef=useRef(incFilter)
+   useEffect(()=>{incFilterRef.current=incFilter},[incFilter])
+   const viewRef = useRef(view)
++  const userRef = useRef<any>(null)
++  useEffect(()=>{userRef.current=user},[user])
+ useEffect(() => {
+   viewRef.current = view
+ }, [view])
+@@ -720,12 +722,38 @@ useEffect(() => {
+   const sessionUser=JSON.parse(stored)
+   setUser(sessionUser)
+     loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
++
++  // Pick up changes an admin makes to THIS account (role, name, phone...) within a few
++  // seconds instead of only at the next login. The role always comes from the database.
++  const ADMIN_VIEWS=['users','mapEditor','incidents','devices','equipment']
++  const syncSession=async()=>{
++    try{
++      const cur=userRef.current||sessionUser
++      const res=await fetch(`/api/users/me?user_id=${cur.user_id}`,{cache:'no-store'})
++      const d=await res.json()
++      if(d.deleted){localStorage.removeItem(SESSION_KEY);router.push('/login');return}
++      if(!d.success||!d.user)return
++      const fresh=d.user
++      const keys=['user_type','full_name','username','email','phone','building']
++      if(!keys.some(k=>(cur[k]??'')!==(fresh[k]??'')))return
++      const merged={...cur,...fresh}
++      localStorage.setItem(SESSION_KEY,JSON.stringify(merged))
++      userRef.current=merged
++      setUser(merged)
++      if(fresh.user_type!==cur.user_type){
++        showToast('info','Your role was updated',`You are now ${fresh.user_type}.`)
++        if(fresh.user_type!=='Admin'&&ADMIN_VIEWS.includes(viewRef.current))setView('dashboard')
++      }
++    }catch{}
++  }
++  syncSession()
+   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
+     const r = setInterval(() => {
+   loadDevices()
+   loadIncidents(incFilterRef.current)
+   loadEquipment()
+-  loadReports(sessionUser.user_id, sessionUser.user_type === 'Admin')
++  syncSession()
++  loadReports(sessionUser.user_id, (userRef.current||sessionUser).user_type === 'Admin')
+ 
+   // Map Editor controls its own data while the admin is dragging/saving.
+   if (viewRef.current !== 'mapEditor') {
+@@ -733,13 +761,14 @@ useEffect(() => {
+   }
+ }, 3000)
+     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
+-    const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
++    const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
+   // Keep every open tab in sync with the session actually stored in this browser.
+   // If a different account logs in (or logs out) in another tab, this tab reloads
+   // so it always reflects the one true active session instead of drifting stale.
+   const onStorage=(e:StorageEvent)=>{
+     if(e.key===SESSION_KEY){window.location.reload()}
+   }
++  document.addEventListener('visibilitychange',onVisible)
+   window.addEventListener('storage',onStorage)
+         return()=>{
+     clearInterval(t);clearInterval(r);clearInterval(rr)

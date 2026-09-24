@@ -679,6 +679,8 @@ export default function Dashboard() {
     const incFilterRef=useRef(incFilter)
   useEffect(()=>{incFilterRef.current=incFilter},[incFilter])
   const viewRef = useRef(view)
+  const userRef = useRef<any>(null)
+  useEffect(()=>{userRef.current=user},[user])
 useEffect(() => {
   viewRef.current = view
 }, [view])
@@ -720,12 +722,38 @@ useEffect(() => {
   const sessionUser=JSON.parse(stored)
   setUser(sessionUser)
     loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+
+  // Pick up changes an admin makes to THIS account (role, name, phone...) within a few
+  // seconds instead of only at the next login. The role always comes from the database.
+  const ADMIN_VIEWS=['users','mapEditor','incidents','devices','equipment']
+  const syncSession=async()=>{
+    try{
+      const cur=userRef.current||sessionUser
+      const res=await fetch(`/api/users/me?user_id=${cur.user_id}`,{cache:'no-store'})
+      const d=await res.json()
+      if(d.deleted){localStorage.removeItem(SESSION_KEY);router.push('/login');return}
+      if(!d.success||!d.user)return
+      const fresh=d.user
+      const keys=['user_type','full_name','username','email','phone','building']
+      if(!keys.some(k=>(cur[k]??'')!==(fresh[k]??'')))return
+      const merged={...cur,...fresh}
+      localStorage.setItem(SESSION_KEY,JSON.stringify(merged))
+      userRef.current=merged
+      setUser(merged)
+      if(fresh.user_type!==cur.user_type){
+        showToast('info','Your role was updated',`You are now ${fresh.user_type}.`)
+        if(fresh.user_type!=='Admin'&&ADMIN_VIEWS.includes(viewRef.current))setView('dashboard')
+      }
+    }catch{}
+  }
+  syncSession()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
     const r = setInterval(() => {
   loadDevices()
   loadIncidents(incFilterRef.current)
   loadEquipment()
-  loadReports(sessionUser.user_id, sessionUser.user_type === 'Admin')
+  syncSession()
+  loadReports(sessionUser.user_id, (userRef.current||sessionUser).user_type === 'Admin')
 
   // Map Editor controls its own data while the admin is dragging/saving.
   if (viewRef.current !== 'mapEditor') {
@@ -733,13 +761,14 @@ useEffect(() => {
   }
 }, 3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
-    const onVisible=()=>{if(document.visibilityState==='visible'){loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')}}
+    const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
   // Keep every open tab in sync with the session actually stored in this browser.
   // If a different account logs in (or logs out) in another tab, this tab reloads
   // so it always reflects the one true active session instead of drifting stale.
   const onStorage=(e:StorageEvent)=>{
     if(e.key===SESSION_KEY){window.location.reload()}
   }
+  document.addEventListener('visibilitychange',onVisible)
   window.addEventListener('storage',onStorage)
         return()=>{
     clearInterval(t);clearInterval(r);clearInterval(rr)
