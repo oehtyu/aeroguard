@@ -177,6 +177,30 @@ function goalFor(zone: MapObject, dist: Float64Array): { idx: number; pt: Pt } |
   return { idx: best, pt: { cx: (c + 0.5) * CELL, cy: (r + 0.5) * CELL } }
 }
 
+// Which assembly area is this room ASSIGNED to?  An Assembly Area is a region (its rectangle)
+// plus a flag. A room that sits inside a zone's rectangle belongs to that zone and is sent to
+// its flag — even if another zone's flag happens to be a shorter walk. If it sits inside several
+// (overlapping) zones, the smallest / most specific one wins. If it is inside none, the zone whose
+// rectangle is nearest is used. Returned best-first, so callers can fall back to the next one
+// only when the first cannot be reached at all.
+export function assignSafeZones(building: MapObject, room: MapObject | null | undefined, all: MapObject[]): MapObject[] {
+  const from: Pt = room ? { cx: n(room.x) + n(room.width, 60) / 2, cy: n(room.y) + n(room.height, 30) / 2 }
+                        : { cx: n(building.x) + n(building.width, 140) / 2, cy: n(building.y) + n(building.height, 80) / 2 }
+  return all.filter(o => o.object_type === 'safe_zone')
+    .map(zone => {
+      const b = box(zone)
+      const inZone = inside(b, from.cx, from.cy)
+      const dx = Math.max(b.x - from.cx, 0, from.cx - (b.x + b.w))
+      const dy = Math.max(b.y - from.cy, 0, from.cy - (b.y + b.h))
+      const rectDist = Math.hypot(dx, dy)
+      const centerDist = Math.hypot(b.x + b.w / 2 - from.cx, b.y + b.h / 2 - from.cy)
+      return { zone, inZone, area: b.w * b.h, rectDist, centerDist }
+    })
+    .sort((a, c) => (Number(c.inZone) - Number(a.inZone)) ||
+      (a.inZone ? a.area - c.area : a.rectDist - c.rectDist) || (a.centerDist - c.centerDist))
+    .map(x => x.zone)
+}
+
 const planCache = new Map<string, EvacPlan | null>()
 
 export function planEvacuation(building: MapObject | undefined | null, room: MapObject | undefined | null, all: MapObject[]): EvacPlan | null {
@@ -212,10 +236,12 @@ function planWithPad(building: MapObject, room: MapObject | null | undefined, al
   const { dist, prev } = sweep(grid, start)
   grid.blocked[cellIndex(start.c, start.r)] = wasBlocked
 
+  // The room's assigned assembly area first; only if its flag cannot be reached at all
+  // (walled in) do we fall back to the next one.
   let best: { zone: MapObject; idx: number; pt: Pt } | null = null
-  for (const zone of zones) {
+  for (const zone of assignSafeZones(building, room, all)) {
     const goal = goalFor(zone, dist)
-    if (goal && (!best || dist[goal.idx] < dist[best.idx])) best = { zone, ...goal }
+    if (goal) { best = { zone, ...goal }; break }
   }
   if (!best) return null
 

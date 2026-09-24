@@ -1,7 +1,7 @@
 'use client'
 
 import { PointerEvent, RefObject, useEffect, useRef, useState } from 'react'
-import { planEvacuation } from './evacuation'
+import { assignSafeZones, planEvacuation } from './evacuation'
 import { nearestExtinguishers, resolveEquipmentPoint, sameBuilding } from './extinguishers'
 
 export type MapObject = {
@@ -54,26 +54,11 @@ function pinOf(o: MapObject) {
   return { cx: o.pin_x ?? (o.x + o.width / 2), cy: o.pin_y ?? (o.y + o.height / 2) }
 }
 
-// Finds the closest "safe_zone" (Assembly Area) block to a given building,
-// by straight-line distance between their centers. This replaces the old
-// hand-authored per-building gate assignment — as the admin reshapes the
-// map or adds new assembly areas, routing adjusts automatically.
+// The assembly area a building belongs to: the zone whose rectangle contains it, else the
+// nearest zone rectangle (see assignSafeZones). Follows the map as admins reshape it.
 export function findNearestSafeZone(building: MapObject | undefined | null, allObjects: MapObject[]): MapObject | null {
   if (!building) return null
-  const safeZones = allObjects.filter(o => o.object_type === 'safe_zone')
-  if (safeZones.length === 0) return null
-  const b = centerOf(building)
-  let best: MapObject | null = null
-  let bestDist = Infinity
-  for (const zone of safeZones) {
-    // Deliberately the zone's own rectangle center here, NOT its draggable
-    // pin — which zone is "nearest" should reflect real campus geometry,
-    // not wherever an admin happened to drag that zone's flag for display.
-    const z = centerOf(zone)
-    const dist = Math.hypot(z.cx - b.cx, z.cy - b.cy)
-    if (dist < bestDist) { bestDist = dist; best = zone }
-  }
-  return best
+  return assignSafeZones(building, null, allObjects)[0] ?? null
 }
 
 type CanvasProps = {
