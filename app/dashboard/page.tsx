@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
 import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject, sameBuilding } from '../components/MapEditor'
+import MapLegend from '../components/MapLegend'
+import HelpGuide from '../components/HelpGuide'
 import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
@@ -339,6 +341,34 @@ const effectiveStatus=(d:any)=>{
 const fmtTime=(ts:string)=>{const d=new Date(ts);return d.toLocaleDateString('en-PH',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(s<60)return`${Math.floor(s)}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;return`${Math.floor(s/3600)}h ago`}
 
+// A report's photo is fetched only when someone actually opens it, not on every poll
+// (the list APIs only ever send `has_photo`, never the image bytes — see api/reports).
+// Loaded photos stay cached here per report_id for the lifetime of the tab, so
+// re-opening a report already seen this session shows it instantly with no re-fetch.
+const reportPhotoCache: Record<string, string> = {}
+function ReportPhoto({ reportId, userId, size = 220 }: { reportId: number; userId: number; size?: number }) {
+  const [src, setSrc] = useState<string | null>(reportPhotoCache[reportId] || null)
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
+  async function load() {
+    setState('loading')
+    try {
+      const res = await fetch(`/api/reports?report_id=${reportId}&user_id=${userId}`).then(r => r.json())
+      if (!res.success || !res.data?.photo_data) { setState('error'); return }
+      reportPhotoCache[reportId] = res.data.photo_data
+      setSrc(res.data.photo_data); setState('idle')
+    } catch { setState('error') }
+  }
+  if (src) return <img src={src} alt="Submitted proof" style={{ marginTop: 8, maxWidth: size, borderRadius: 6, display: 'block' }} />
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={load} disabled={state === 'loading'}
+        style={{ padding: '5px 12px', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', fontSize: '.75rem', cursor: state === 'loading' ? 'default' : 'pointer' }}>
+        {state === 'loading' ? 'Loading photo…' : state === 'error' ? '⚠ Could not load photo — retry' : '📷 View photo'}
+      </button>
+    </div>
+  )
+}
+
 // ── INCIDENT REPORTING ───────────────────────────────────────
 // Always shows only the CURRENT user's own reports — admin or not.
 // The full cross-user view already exists separately in the admin's
@@ -356,7 +386,22 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
   // browser, so a report stays a reasonable size in the database no matter
   // how large the original phone photo was.
   const handlePhoto = (file: File) => {
+    // The <input accept="image/*"> below is only a hint to the OS file picker —
+    // on Windows, some mobile browsers, and whenever "All Files" is chosen, a
+    // non-image file (a .docx, a .pdf, ...) can still be selected here. Before
+    // this check, a non-image file would silently fail to decode as an <img>
+    // (img.onload never fires, and nothing told the user anything was wrong),
+    // so the report got submitted with no photo at all, with no error shown —
+    // the file picker visibly "accepted" the file, but nothing was ever saved.
+    if (!file.type.startsWith('image/')) {
+      setErr(`"${file.name}" isn't an image, so it can't be attached here — only photos (JPG, PNG, etc.) are supported. The file was not saved.`)
+      return
+    }
+    setErr('')
     const reader = new FileReader()
+    reader.onerror = () => {
+      setErr(`Could not read "${file.name}". Please try again or pick a different photo.`)
+    }
     reader.onload = () => {
       const img = new Image()
       img.onload = () => {
@@ -368,6 +413,11 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
         const ctx = canvas.getContext('2d')
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
         setPhotoData(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      // Belt-and-suspenders: if the browser accepted the file as "image/*" but
+      // still can't actually decode it, tell the user instead of staying silent.
+      img.onerror = () => {
+        setErr(`Could not open "${file.name}" as an image. Please try a different photo.`)
       }
       img.src = reader.result as string
     }
@@ -413,7 +463,7 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
               <div style={{ marginTop: 8, fontSize: '.8rem', color: 'var(--text)' }}>
                 <div><b>Actions taken:</b> {r.actions_taken}</div>
                 {r.remarks && <div style={{ marginTop: 4 }}><b>Remarks:</b> {r.remarks}</div>}
-                {r.photo_data && <img src={r.photo_data} alt="Submitted proof" style={{ marginTop: 8, maxWidth: 220, borderRadius: 6, display: 'block' }} />}
+                {r.has_photo && <ReportPhoto reportId={r.report_id} userId={user.user_id} size={220} />}
               </div>
             )}
           </div>
@@ -699,6 +749,14 @@ export default function Dashboard() {
   const [viewIncident,setViewIncident]=useState<any>(null)
   const [clock,setClock]=useState('')
   const [toast,setToast]=useState<any>(null)
+  // Tracks the DASHBOARD's own connection to the server — separate from a sensor
+  // going "Offline" (which means the Pi stopped reporting). A flaky wifi/mobile
+  // connection or a slow Vercel/Neon response used to fail silently: every poll
+  // just returned {success:false} and the screen quietly kept showing stale data
+  // with no indication anything was wrong. connLost surfaces that honestly.
+  const [connLost,setConnLost]=useState(false)
+  const [lastSync,setLastSync]=useState<Date|null>(null)
+  const consecutiveFailRef=useRef(0)
   const [modal,setModal]=useState<string|null>(null)
   const [form,setForm]=useState<any>({})
   const [formErrors,setFormErrors]=useState<Record<string,string>>({})
@@ -745,6 +803,19 @@ useEffect(() => {
   const [otpLoading,setOtpLoading]=useState(false)
   const [visiblePw,setVisiblePw]=useState<Record<string,boolean>>({})
   const [sidebarOpen,setSidebarOpen]=useState(false)
+  const [theme,setTheme]=useState<'dark'|'light'>('dark')
+  const [helpOpen,setHelpOpen]=useState(false)
+  useEffect(()=>{
+    try{ if(localStorage.getItem('ag-theme')==='light'){document.documentElement.setAttribute('data-theme','light');setTheme('light')} }catch{}
+  },[])
+  function toggleTheme(){
+    const next=theme==='light'?'dark':'light'
+    setTheme(next)
+    try{
+      if(next==='light'){document.documentElement.setAttribute('data-theme','light');localStorage.setItem('ag-theme','light')}
+      else{document.documentElement.removeAttribute('data-theme');localStorage.setItem('ag-theme','dark')}
+    }catch{}
+  }
 
   const isAdmin=user?.user_type==='Admin'
 
@@ -808,13 +879,40 @@ useEffect(() => {
     window.removeEventListener('storage',onStorage)
   }
   },[])
+  // The browser tells us the instant it drops/regains a connection — no need to
+  // wait out 3 failed polls for that case. Reconnecting refreshes everything
+  // immediately instead of waiting for the next scheduled poll.
+  useEffect(()=>{
+    const goOffline=()=>setConnLost(true)
+    const goOnline=()=>{loadDevices();loadIncidents(incFilterRef.current);loadEquipment();loadMapObjects()}
+    window.addEventListener('offline',goOffline)
+    window.addEventListener('online',goOnline)
+    return()=>{window.removeEventListener('offline',goOffline);window.removeEventListener('online',goOnline)}
+  },[])
   const showToast=(type:string,title:string,msg:string)=>{setToast({type,title,msg});setTimeout(()=>setToast(null),6000)}
   const api=async(url:string,method='GET',body?:any)=>{
+  // A hung request used to just sit there forever on a bad connection — nothing
+  // ever timed out, so a slow/dead network looked identical to "still loading".
+  // 10s is generous for a normal request but still catches a truly stuck one.
+  const controller=new AbortController()
+  const timeoutId=setTimeout(()=>controller.abort(),10000)
   try{
-    const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
-    return await res.json()
+    const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:controller.signal})
+    const data=await res.json()
+    consecutiveFailRef.current=0
+    setConnLost(false)
+    setLastSync(new Date())
+    return data
   }catch(err:any){
-    return {success:false, message:`Request failed: ${err.message||'unexpected server error'}`}
+    // One dropped request isn't a real outage (could just be a single retry-able
+    // blip) — only tell the user once a few polls in a row have failed, which at
+    // the normal 3s poll interval is roughly 9 seconds of being truly stuck.
+    consecutiveFailRef.current+=1
+    if(consecutiveFailRef.current>=3)setConnLost(true)
+    const timedOut=err?.name==='AbortError'
+    return {success:false, message: timedOut?'Request timed out.':`Request failed: ${err.message||'unexpected server error'}`}
+  }finally{
+    clearTimeout(timeoutId)
   }
 }
 
@@ -1204,6 +1302,12 @@ o.name.trim() !== '')
 
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
+      {connLost&&(
+        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:400,background:'var(--red)',color:'#fff',
+                     padding:'8px 16px',fontSize:'.8rem',fontWeight:600,textAlign:'center'}}>
+          ⚠ Connection lost — {lastSync?`showing data from ${lastSync.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`:'no data loaded yet'}. Retrying…
+        </div>
+      )}
       <style>{`
         .ag-hamburger{display:none}
         .ag-sidebar-close{display:none}
@@ -1280,6 +1384,12 @@ o.name.trim() !== '')
             </div>
           </div>
                <div style={{display:'flex',alignItems:'center',gap:14}}>
+            <button onClick={()=>setHelpOpen(true)} title="Help" aria-label="Open help guide"
+              style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text)',cursor:'pointer',padding:'6px 10px',fontSize:'.8rem',fontWeight:600}}>❓ Help</button>
+            <button onClick={toggleTheme} title={theme==='light'?'Switch to dark mode':'Switch to light mode'} aria-label="Toggle light or dark mode"
+              style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text)',cursor:'pointer',padding:'6px 9px',fontSize:'.95rem',lineHeight:1,display:'flex'}}>
+              {theme==='light'?'🌙':'☀️'}
+            </button>
             <PushSubscribe/>
             <span style={{fontSize:'.68rem',padding:'3px 10px',borderRadius:20,fontFamily:'var(--mono)',fontWeight:600,textTransform:'uppercase',background:chipBg,color:chipColor,border:`1px solid ${chipBorder}`}}>{user?.user_type}</span>
             <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'.75rem',color:'var(--green)',fontFamily:'var(--mono)'}}><div style={{width:8,height:8,background:'var(--green)',borderRadius:'50%'}}/> SYSTEM LIVE</div>
@@ -1468,7 +1578,14 @@ o.name.trim() !== '')
                 <div style={{fontSize:'.85rem',color:'var(--muted)'}}>All markers reflect live database data. Hover for details.</div>
                                 {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
               </div>
-              <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} equipment={equipment} />
+              <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
+                <div style={{flex:'1 1 480px',minWidth:0}}>
+                  <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} equipment={equipment} />
+                </div>
+                <div style={{width:260,flexShrink:0}}>
+                  <MapLegend variant="view" />
+                </div>
+              </div>
               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
@@ -1605,7 +1722,7 @@ o.name.trim() !== '')
                         {r.status==='Submitted' ? (
                           <>
                                                         <div style={{fontSize:'.8rem',marginTop:6}}><b>Actions taken:</b> {r.actions_taken}</div>
-                            {r.photo_data && <img src={r.photo_data} alt="Submitted proof" style={{marginTop:6,maxWidth:200,borderRadius:6,display:'block'}} />}
+                            {r.has_photo && <ReportPhoto reportId={r.report_id} userId={user.user_id} size={200} />}
                             {r.remarks&&<div style={{fontSize:'.8rem',marginTop:4}}><b>Remarks:</b> {r.remarks}</div>}
                           </>
                         ) : (
@@ -2045,6 +2162,8 @@ setForm({
           </div>
         </div>
       )}
+
+      {helpOpen&&<HelpGuide isAdmin={isAdmin} onClose={()=>setHelpOpen(false)}/>}
     </div>
   )
 }

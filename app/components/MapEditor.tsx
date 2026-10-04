@@ -3,6 +3,7 @@
 import { PointerEvent, RefObject, useEffect, useRef, useState } from 'react'
 import { assignSafeZones, planEvacuation } from './evacuation'
 import { nearestExtinguishers, resolveEquipmentPoint, sameBuilding } from './extinguishers'
+import MapLegend from './MapLegend'
 
 export type MapObject = {
   map_object_id: number
@@ -516,6 +517,7 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
       <MapCanvas objects={objects} devices={devices} incidents={incidents} equipment={equipment} equipmentOffsets={extOffsets} onEquipmentPointerDown={beginExt} selectedId={selectedId} canvasRef={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={end} isEditor highlightId={targetBuildingId} />
+      <div style={{ display: 'grid', gap: 16 }}>
       <aside style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
         <h3 style={{ margin: '0 0 6px' }}>Map Editor</h3>
         <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '.75rem' }}>Drag an item to move it. Selected items can be resized from the blue corner. Drag each 🧯 extinguisher to its exact spot (dashed outline = not placed yet).</p>
@@ -582,6 +584,8 @@ export default function MapEditor({ initialObjects, adminId, onChanged, onEquipm
 
         {message && <div style={{ color: /Saved|added/.test(message) ? 'var(--accent)' : 'var(--red)', fontSize: '.75rem', marginTop: 12 }}>{message}</div>}
       </aside>
+      <MapLegend variant="editor" />
+      </div>
     </div>
   )
 }
