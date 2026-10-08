@@ -953,9 +953,20 @@ useEffect(() => {
   const isAdmin=user?.user_type==='Admin'
 
        useEffect(()=>{
-  const stored=localStorage.getItem(SESSION_KEY)
-  if(!stored){router.push('/login');return}
-  const sessionUser=JSON.parse(stored)
+  let cancelled=false
+  let cleanup:(()=>void)|undefined
+  ;(async()=>{
+  // The session lives in an httpOnly cookie, so ask the server who we are
+  // (localStorage is no longer written by the login page).
+  let sessionUser:any
+  try{
+    const meRes=await fetch('/api/users/me',{cache:'no-store',credentials:'same-origin'})
+    const meData=await meRes.json()
+    if(!meData.success||!meData.user){router.push('/login');return}
+    sessionUser=meData.user
+  }catch{router.push('/login');return}
+  if(cancelled)return
+  userRef.current=sessionUser
   setUser(sessionUser)
     loadDevices();loadIncidents();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
 
@@ -965,15 +976,14 @@ useEffect(() => {
   const syncSession=async()=>{
     try{
       const cur=userRef.current||sessionUser
-      const res=await fetch(`/api/users/me?user_id=${cur.user_id}`,{cache:'no-store'})
+      const res=await fetch('/api/users/me',{cache:'no-store',credentials:'same-origin'})
       const d=await res.json()
-      if(d.deleted){localStorage.removeItem(SESSION_KEY);router.push('/login');return}
+      if(d.deleted||res.status===401){router.push('/login');return}
       if(!d.success||!d.user)return
       const fresh=d.user
       const keys=['user_type','full_name','username','email','phone','building']
       if(!keys.some(k=>(cur[k]??'')!==(fresh[k]??'')))return
       const merged={...cur,...fresh}
-      localStorage.setItem(SESSION_KEY,JSON.stringify(merged))
       userRef.current=merged
       setUser(merged)
       if(fresh.user_type!==cur.user_type){
@@ -994,19 +1004,13 @@ useEffect(() => {
 }, 3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
-  // Keep every open tab in sync with the session actually stored in this browser.
-  // If a different account logs in (or logs out) in another tab, this tab reloads
-  // so it always reflects the one true active session instead of drifting stale.
-  const onStorage=(e:StorageEvent)=>{
-    if(e.key===SESSION_KEY){window.location.reload()}
-  }
   document.addEventListener('visibilitychange',onVisible)
-  window.addEventListener('storage',onStorage)
-        return()=>{
+  cleanup=()=>{
     clearInterval(t);clearInterval(r);clearInterval(rr)
     document.removeEventListener('visibilitychange',onVisible)
-    window.removeEventListener('storage',onStorage)
   }
+  })()
+  return()=>{cancelled=true;cleanup?.()}
   },[])
   // The browser tells us the instant it drops/regains a connection — no need to
   // wait out 3 failed polls for that case. Reconnecting refreshes everything
@@ -1081,9 +1085,8 @@ useEffect(() => {
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
-    localStorage.removeItem(SESSION_KEY);
+    fetch('/api/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>router.push('/login'))
     if(auto)showToast('info','Session Expired','Logged out due to inactivity.')
-    router.push('/login')
   }
 
   // ── OCCUPANCY: check if a room already has a device ──────────
@@ -1146,7 +1149,6 @@ setModal(null);loadUsers()
     const d=await api('/api/users','PUT',{mode:'self',user_id:user.user_id,full_name:form.full_name,username:form.username,email:form.email||'',phone:form.phone||''})
     if(!d.success){showToast('error','Error',d.message);return}
     const updated={...user,...d.user}
-    localStorage.setItem(SESSION_KEY,JSON.stringify(updated))
     setUser(updated)
     showToast('success','Profile Updated','Your profile has been updated.')
     setModal(null);loadUsers()
