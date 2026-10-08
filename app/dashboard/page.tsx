@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import MapEditor, { MapCanvas, MapObject, findNearestSafeZone, normaliseObject, sameBuilding } from '../components/MapEditor'
-import MapLegend from '../components/MapLegend'
+import { MapObject, findNearestSafeZone, normaliseObject } from '../components/MapEditor'
 import HelpGuide from '../components/HelpGuide'
 import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
@@ -214,45 +213,17 @@ const EXT_LOCATIONS_BY_BUILDING: Record<string, { floor:string; desc:string; lab
   ],
 }
 
-// Options for the extinguisher "Location" dropdown of a building.
-// Rooms on the map become "Near <room>"; each floor also gets generic spots.
-// Falls back to the original hard-coded list when the map has no rooms yet, and
-// keeps a legacy value selectable while editing an older record.
-function buildExtOptions(building:string, mapObjects:MapObject[], currentKey?:string): { floor:string; desc:string; label:string }[] {
-  const rooms=mapObjects.filter(o=>o.object_type==='room'&&o.parent_name===building&&o.name.trim()!==''&&o.name.trim().toLowerCase()!=='room')
-  const opts:{ floor:string; desc:string; label:string }[]=[]
-  if(rooms.length){
-    const floors=Array.from(new Set(rooms.map(r=>r.floor||'1F'))).sort()
-    for(const f of floors){
-      for(const spot of ['Hallway','Near staircase','Near main exit']) opts.push({floor:f,desc:spot,label:`${f} — ${spot}`})
-      rooms.filter(r=>(r.floor||'1F')===f).forEach(r=>opts.push({floor:f,desc:`Near ${r.name}`,label:`${f} — Near ${r.name}`}))
-    }
-  } else {
-    opts.push(...(EXT_LOCATIONS_BY_BUILDING[building]||[]))
-  }
+// Options for the extinguisher "Location" dropdown of a building (hardcoded, same table
+// used for the map's own extinguisher positions in EXT_CONFIGS below). Keeps a legacy
+// value selectable if it's already saved on the record being edited.
+function buildExtOptions(building:string, currentKey?:string): { floor:string; desc:string; label:string }[] {
+  const opts=[...(EXT_LOCATIONS_BY_BUILDING[building]||[])]
   if(currentKey&&!opts.some(o=>`${o.floor}|${o.desc}`===currentKey)){
     const [floor,...rest]=currentKey.split('|'); const desc=rest.join('|')
     if(desc) opts.unshift({floor,desc,label:`${floor} — ${desc}`})
   }
   return opts
 }
-
-// Building choices for the Device / Extinguisher forms: one entry per name. A name that several map
-// blocks share while one of them holds rooms is 'ambiguous' (their rooms would be mixed together), so
-// it is shown but can't be picked until the buildings are given their own names in the Map Editor.
-function buildingChoices(mapObjects:MapObject[]): { name:string; ambiguous:boolean; hasRooms:boolean }[] {
-  const blocks=mapObjects.filter(o=>o.object_type==='building'&&o.name.trim()!=='')
-  const withRooms=new Set(mapObjects.filter(o=>o.object_type==='room'&&o.parent_id!=null).map(o=>Number(o.parent_id)))
-  const out:{ name:string; ambiguous:boolean; hasRooms:boolean }[]=[]
-  for(const b of blocks){
-    if(out.some(c=>c.name===b.name)) continue
-    const group=blocks.filter(o=>sameBuilding(o.name,b.name))
-    out.push({ name:b.name, ambiguous:group.length>1&&group.some(o=>withRooms.has(Number(o.map_object_id))), hasRooms:group.some(o=>withRooms.has(Number(o.map_object_id))) })
-  }
-  return out
-}
-const firstUsableBuilding=(choices:{ name:string; ambiguous:boolean; hasRooms:boolean }[])=>
-  (choices.find(c=>!c.ambiguous&&c.hasRooms)||choices.find(c=>!c.ambiguous))?.name||''
 
 // ── UI HELPERS ────────────────────────────────────────────────
 const SBadge: React.CSSProperties = {display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:4,fontSize:'.7rem',fontWeight:600,fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'.5px',justifySelf:'start',width:'fit-content'}
@@ -349,6 +320,7 @@ const reportPhotoCache: Record<string, string> = {}
 function ReportPhoto({ reportId, userId, size = 220 }: { reportId: number; userId: number; size?: number }) {
   const [src, setSrc] = useState<string | null>(reportPhotoCache[reportId] || null)
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [zoomed, setZoomed] = useState(false)
   async function load() {
     setState('loading')
     try {
@@ -358,7 +330,20 @@ function ReportPhoto({ reportId, userId, size = 220 }: { reportId: number; userI
       setSrc(res.data.photo_data); setState('idle')
     } catch { setState('error') }
   }
-  if (src) return <img src={src} alt="Submitted proof" style={{ marginTop: 8, maxWidth: size, borderRadius: 6, display: 'block' }} />
+  if (src) return (
+    <>
+      <img src={src} alt="Submitted proof — click to enlarge" onClick={() => setZoomed(true)}
+        style={{ marginTop: 8, maxWidth: size, borderRadius: 6, display: 'block', cursor: 'zoom-in' }} />
+      {zoomed && (
+        <div onClick={() => setZoomed(false)} role="dialog" aria-modal="true"
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+          <img src={src} alt="Submitted proof — full resolution" style={{ maxWidth: '96vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 4 }} />
+          <button onClick={() => setZoomed(false)} aria-label="Close"
+            style={{ position: 'fixed', top: 16, right: 20, width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+    </>
+  )
   return (
     <div style={{ marginTop: 8 }}>
       <button onClick={load} disabled={state === 'loading'}
@@ -545,7 +530,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
       `}</style>
       <div className="ag-map-hint">↔ Swipe to see the full campus map</div>
       <div className="ag-map-scroll" style={{width:'100%'}}>
-      <svg viewBox="0 0 1140 600" style={{width:'100%',minWidth:820,height:'auto',display:'block',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
+      <svg viewBox="0 0 1140 600" onClick={()=>setTip(null)} style={{width:'100%',minWidth:820,height:'auto',display:'block',background:'#0d1421',borderRadius:8,border:'1px solid var(--border)'}}>
         {/* Grid */}
         {Array.from({length:39}).map((_,i)=><line key={`v${i}`} x1={i*30} y1={0} x2={i*30} y2={600} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
         {Array.from({length:21}).map((_,i)=><line key={`h${i}`} x1={0} y1={i*30} x2={1140} y2={i*30} stroke="rgba(255,255,255,0.03)" strokeWidth={1}/>)}
@@ -624,7 +609,8 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           return (
             <g key={e.equipment_id} style={{cursor:'pointer'}}
                onMouseEnter={()=>setTip({type:'ext',data:e,x:pos.x,y:pos.y})}
-               onMouseLeave={()=>setTip(null)}>
+               onMouseLeave={()=>setTip(null)}
+               onClick={ev=>{ev.stopPropagation();setTip((t:any)=>t&&t.type==='ext'&&t.data.equipment_id===e.equipment_id?null:{type:'ext',data:e,x:pos.x,y:pos.y})}}>
               <circle cx={pos.x} cy={pos.y} r={7} fill="rgba(249,115,22,0.2)" stroke={strokeColor} strokeWidth={1.5}/>
               <text x={pos.x} y={pos.y+4} textAnchor="middle" fontSize={10} fill={strokeColor}>🧯</text>
             </g>
@@ -640,7 +626,8 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           return (
             <g key={d.device_id} style={{cursor:'pointer'}}
                onMouseEnter={()=>setTip({type:'device',data:d,threat,x:pos.x,y:pos.y})}
-               onMouseLeave={()=>setTip(null)}>
+               onMouseLeave={()=>setTip(null)}
+               onClick={ev=>{ev.stopPropagation();setTip((t:any)=>t&&t.type==='device'&&t.data.device_id===d.device_id?null:{type:'device',data:d,threat,x:pos.x,y:pos.y})}}>
               {active&&(
                 <circle cx={pos.x} cy={pos.y} r={14} fill="none" stroke={color} strokeWidth={1} opacity={0.4}>
                   <animate attributeName="r" values="10;18;10" dur="2s" repeatCount="indefinite"/>
@@ -828,7 +815,7 @@ useEffect(() => {
 
   // Pick up changes an admin makes to THIS account (role, name, phone...) within a few
   // seconds instead of only at the next login. The role always comes from the database.
-  const ADMIN_VIEWS=['users','mapEditor','incidents','devices','equipment']
+  const ADMIN_VIEWS=['users','incidents','devices','equipment']
   const syncSession=async()=>{
     try{
       const cur=userRef.current||sessionUser
@@ -858,10 +845,7 @@ useEffect(() => {
   syncSession()
   loadReports(sessionUser.user_id, (userRef.current||sessionUser).user_type === 'Admin')
 
-  // Map Editor controls its own data while the admin is dragging/saving.
-  if (viewRef.current !== 'mapEditor') {
-    loadMapObjects()
-  }
+  loadMapObjects()
 }, 3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
@@ -958,11 +942,6 @@ useEffect(() => {
   loadIncidents()
   loadEquipment()
   loadMapObjects()
-}
-if(v==='mapEditor'){
-  loadDevices()
-  loadIncidents()
-  loadEquipment()
 }
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
@@ -1237,7 +1216,6 @@ function declineResponse() {
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
     {id:'reports',icon:'📝',label:'Incident Reporting',section:''},
     {id:'users',icon:'👥',label:'User Accounts',section:'Manage',admin:true},
-    {id:'mapEditor',icon:'✏️',label:'Map Editor',section:'',admin:true},
     {id:'incidents',icon:'🔔',label:'Incident Log',section:'',admin:true},
     {id:'devices',icon:'📡',label:'Devices',section:'',admin:true},
     {id:'equipment',icon:'🧯',label:'Extinguishers',section:'',admin:true},
@@ -1281,24 +1259,9 @@ function declineResponse() {
   )}
   const lbl=(t:string)=><label style={{fontSize:'.75rem',color:'var(--muted)',textTransform:'uppercase' as const,letterSpacing:1,marginBottom:6,display:'block'}}>{t}</label>
 
-  // Derived room list for current building in device form
-  const mapBuildings = mapObjects.filter(o => o.object_type === 'building')
-
-const currentRoomOptions = mapObjects
-  .filter(o => o.object_type === 'room' &&
-o.parent_name === form.building &&
-o.name.trim().toLowerCase() !== 'room' &&
-o.name.trim() !== '')
-  .map(o => ({
-    floor: o.floor || '1F',
-    room: o.name,
-    label: `${o.floor || '1F'} — ${o.name}`,
-  }))
-  // Extinguisher locations come from the live map (rooms in the chosen building),
-  // so new rooms/buildings added in the Map Editor become assignable automatically.
-  const buildingOptions = buildingChoices(mapObjects)
-  const extBuildingOptions = buildingOptions.length?buildingOptions.map(c=>c.name):BUILDINGS_LIST
-  const currentExtOptions = buildExtOptions(form.building, mapObjects, form.extKey)
+  // Derived room list for current building in device form (hardcoded, same as before the map editor)
+  const currentRoomOptions = ROOMS_BY_BUILDING[form.building] || []
+  const currentExtOptions = buildExtOptions(form.building, form.extKey)
 
   return (
     <div style={{display:'flex',minHeight:'100vh',fontFamily:'var(--font)'}}>
@@ -1379,7 +1342,7 @@ o.name.trim() !== '')
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',mapEditor:'Map Editor',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Extinguishers'}[view]}</div>
+              <div style={{fontSize:'1.05rem',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{{dashboard:'System Dashboard',map:'Campus Map',reports:'Incident Reporting',incidents:'Incident Log',users:'User Accounts',devices:'Device Management',equipment:'Extinguishers'}[view]}</div>
               <div style={{fontSize:'.75rem',color:'var(--muted)',fontFamily:'var(--mono)'}}>AeroGuard / {view}</div>
             </div>
           </div>
@@ -1575,17 +1538,10 @@ o.name.trim() !== '')
           {view==='map'&&(
             <div>
               <div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
-                <div style={{fontSize:'.85rem',color:'var(--muted)'}}>All markers reflect live database data. Hover for details.</div>
+                <div style={{fontSize:'.85rem',color:'var(--muted)'}}>Tap or hover a marker for its status.</div>
                                 {redInc&&<div style={{background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:8,padding:'8px 16px',fontSize:'.8rem',color:'var(--red)',display:'flex',alignItems:'center',gap:8}}>🚨 <strong>Evacuation route active</strong> — {redInc.location}</div>}
               </div>
-              <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
-                <div style={{flex:'1 1 480px',minWidth:0}}>
-                  <MapCanvas objects={mapObjects} devices={devices} incidents={incidents} equipment={equipment} />
-                </div>
-                <div style={{width:260,flexShrink:0}}>
-                  <MapLegend variant="view" />
-                </div>
-              </div>
+              <CampusMap devices={devices} incidents={incidents} equipment={equipment} />
               {incidents.filter(i=>!i.resolved&&i.threat_level!=='Gray').length>0&&(
                 <div style={{marginTop:16,background:'var(--panel)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
                   <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',fontSize:'.875rem',fontWeight:600}}>Active Alerts on Map</div>
@@ -1603,19 +1559,6 @@ o.name.trim() !== '')
             </div>
           )}
 
-            {/* ══ MAP EDITOR ══ */}
-           {view==='mapEditor' && isAdmin && ( 
-            
-      <MapEditor
-  initialObjects={mapObjects}
-  adminId={user.user_id}
-  devices={devices}
-  incidents={incidents}
-  equipment={equipment}
-  onChanged={loadMapObjects}
-  onEquipmentChanged={loadEquipment}
-/>
-              )}
                     {/* ══ INCIDENT REPORTING ══ */}
           {view==='reports'&&(
            <ReportingPanel reports={reports} user={user} isAdmin={isAdmin} onSubmitted={()=>loadReports(user?.user_id,isAdmin)}/>
@@ -1792,18 +1735,13 @@ o.name.trim() !== '')
                 <input value={devSearch} onChange={e=>setDevSearch(e.target.value)} placeholder="🔍  Search devices..." style={{background:'var(--panel)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 14px',color:'var(--text)',fontSize:'.82rem',outline:'none',width:240}}/>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding = firstUsableBuilding(buildingOptions)
-const defaultRoom = mapObjects.find(
-  o => o.object_type === 'room' &&
-o.parent_name === defaultBuilding &&
-o.name.trim().toLowerCase() !== 'room' &&
-o.name.trim() !== ''
-)
+                  const defaultBuilding = BUILDINGS_LIST[0]
+                  const defaultRoom = ROOMS_BY_BUILDING[defaultBuilding]?.[0]
                   setEditId(null)
                   setForm({
   building: defaultBuilding,
   roomKey: defaultRoom
-    ? `${defaultRoom.floor || '1F'}|${defaultRoom.name}`
+    ? `${defaultRoom.floor}|${defaultRoom.room}`
     : '',
   status: 'Online',
 })
@@ -1846,8 +1784,8 @@ o.name.trim() !== ''
               <div style={{display:'flex',marginBottom:16}}>
                 <div style={{flex:1}}/>
                 <button onClick={()=>{
-                  const defaultBuilding=firstUsableBuilding(buildingOptions)||extBuildingOptions[0]
-                  const defaultExt=buildExtOptions(defaultBuilding,mapObjects)[0]
+                  const defaultBuilding=BUILDINGS_LIST[0]
+                  const defaultExt=buildExtOptions(defaultBuilding)[0]
                   setEditId(null)
                   setForm({equipment_type:'ABC',building:defaultBuilding,extKey:defaultExt?`${defaultExt.floor}|${defaultExt.desc}`:'',status:'Active',last_inspection:new Date().toISOString().split('T')[0]})
                   setFormErrors({})
@@ -2004,25 +1942,16 @@ o.name.trim() !== ''
                   <select value={form.building||'Medina Lacson Building'}
                     onChange={e=>{
                       const b=e.target.value
-                      const firstRoom = mapObjects.find(
-  o => o.object_type === 'room' &&
-o.parent_name === b &&
-o.name.trim().toLowerCase() !== 'room' &&
-o.name.trim() !== ''
-)
-setForm({
+                      const firstRoom = ROOMS_BY_BUILDING[b]?.[0]
+                      setForm({
   ...form,
   building: b,
-  roomKey: firstRoom ? `${firstRoom.floor || '1F'}|${firstRoom.name}` : '',
+  roomKey: firstRoom ? `${firstRoom.floor}|${firstRoom.room}` : '',
 })
                       setFormErrors({...formErrors, building:'', roomKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {buildingOptions.map(c => (
-  <option key={c.name} value={c.name} disabled={c.ambiguous}>
-    {c.ambiguous ? `${c.name} — shared name, rename in Map Editor` : c.name}
-  </option>
-))}
+                    {BUILDINGS_LIST.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
@@ -2080,17 +2009,15 @@ setForm({
                 </div>
                 <div style={{marginBottom:14}}>
                   {lbl('Building')}
-                  <select value={form.building||extBuildingOptions[0]}
+                  <select value={form.building||BUILDINGS_LIST[0]}
                     onChange={e=>{
                       const b=e.target.value
-                      const firstExt=buildExtOptions(b,mapObjects)[0]
+                      const firstExt=buildExtOptions(b)[0]
                       setForm({...form, building:b, extKey: firstExt?`${firstExt.floor}|${firstExt.desc}`:''})
                       setFormErrors({...formErrors, building:'', extKey:''})
                     }}
                     style={{width:'100%',background:'var(--panel2)',border:`1px solid ${formErrors.building?'var(--red)':'var(--border)'}`,borderRadius:6,padding:'9px 12px',color:'var(--text)',fontSize:'.85rem',fontFamily:'var(--font)',outline:'none'}}>
-                    {buildingOptions.length
-                      ? buildingOptions.map(c=><option key={c.name} value={c.name} disabled={c.ambiguous}>{c.ambiguous?`${c.name} — shared name, rename in Map Editor`:c.name}</option>)
-                      : extBuildingOptions.map(b=><option key={b} value={b}>{b}</option>)}
+                    {BUILDINGS_LIST.map(b=><option key={b} value={b}>{b}</option>)}
                   </select>
                   {formErrors.building&&<div style={{color:'var(--red)',fontSize:'.7rem',marginTop:3}}>⚠ {formErrors.building}</div>}
                 </div>
@@ -2106,7 +2033,7 @@ setForm({
                   </div>
                   <div>{lbl('Last Inspection Date')}{input('last_inspection','','date')}</div>
                 </div>
-                <div style={{marginTop:4,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each location holds one extinguisher. After saving, open Map Editor and drag the 🧯 to its exact spot on the map.</div>
+                <div style={{marginTop:4,fontSize:'.75rem',color:'var(--muted)'}}>💡 Each location holds one extinguisher.</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={{padding:'8px 18px',background:'transparent',border:'1px solid var(--border)',borderRadius:6,color:'var(--muted)',fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--font)'}}>Cancel</button>

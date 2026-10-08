@@ -13,6 +13,18 @@ const SEVERITY_MESSAGE: Record<string, string> = {
   Red: 'Critical smoke level detected. Fire emergency — evacuate now using the stairs (not elevators), go to your assembly area, and do not go back inside.',
 }
 
+async function notifyDeviceOnline(device: any) {
+  try {
+    await sendPushToAll({
+      title: 'AeroGuard Device Online',
+      body: `${device.device_name} (${device.device_id}) at ${device.building}, ${device.floor}, ${device.room} is back online.`,
+      url: '/dashboard',
+    });
+  } catch (e: any) {
+    console.error('[PUSH] online notify failed:', e);
+  }
+}
+
 async function notifyEscalation(device: any, threat_level: string) {
   try {
     await sendPushToAll({
@@ -59,7 +71,7 @@ export async function POST(req: NextRequest) {
     if (!device_id) return NextResponse.json({ success: false, message: 'Device ID is required.' });
     if (!threat_level) return NextResponse.json({ success: false, message: 'Threat level is required.' });
 
-    const existing = await sql`SELECT device_id, building, floor, room, peak_threat FROM devices WHERE device_id = ${device_id}`;
+    const existing = await sql`SELECT device_id, device_name, building, floor, room, status, peak_threat FROM devices WHERE device_id = ${device_id}`;
     if (existing.length === 0)
       return NextResponse.json({ success: false, message: `Unknown device_id "${device_id}" — add it in the dashboard first.` });
 
@@ -85,6 +97,11 @@ export async function POST(req: NextRequest) {
           server_received_at=${server_received_at}
       WHERE device_id=${device_id}
     `;
+
+    // Only notify on a genuine Offline -> Online transition, not on every routine heartbeat.
+    if (device.status === 'Offline') {
+      await notifyDeviceOnline(device);
+    }
 
     const openIncident = await sql`
       SELECT incident_id, threat_level FROM incidents

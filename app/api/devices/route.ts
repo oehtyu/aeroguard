@@ -1,12 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { sendPushToAll } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+// A device is considered offline once its last heartbeat is older than 15 seconds — the
+// INTERVAL literal below must be kept in sync with the dashboard's own `effectiveStatus()`
+// client-side check (and with the heartbeat interval devices are expected to send at).
+//
+// There's no scheduled job in this app, so the "device went offline" check rides along on
+// this endpoint instead, which every open dashboard already polls every few seconds. The
+// UPDATE's WHERE clause only matches devices still marked 'Online' in the database, so even
+// if several dashboards poll at once, only the request that actually flips the row sends the
+// notification — everyone else's UPDATE simply matches zero rows.
+async function flagNewlyOfflineDevices() {
+  try {
+    const flipped = await sql`
+      UPDATE devices SET status='Offline'
+      WHERE status='Online' AND last_update < NOW() - INTERVAL '15 seconds'
+      RETURNING device_id, device_name, building, floor, room
+    `;
+    for (const device of flipped) {
+      try {
+        await sendPushToAll({
+          title: 'AeroGuard Device Offline',
+          body: `${device.device_name} (${device.device_id}) at ${device.building}, ${device.floor}, ${device.room} stopped sending data.`,
+          url: '/dashboard',
+        });
+      } catch (e: any) {
+        console.error('[PUSH] offline notify failed:', e);
+      }
+    }
+  } catch (err: any) {
+    console.error('[OFFLINE WATCHDOG] Failed:', err);
+  }
+}
+
 export async function GET() {
   try {
-     const rows = await sql`
+    await flagNewlyOfflineDevices();
+    const rows = await sql`
       SELECT device_id, device_name, building, floor, room, status,
              pm25_value, pm10_value, temperature, humidity, current_threat, last_update,
              sensor_read_at, pi_sent_at, server_received_at
