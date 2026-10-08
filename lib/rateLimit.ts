@@ -5,13 +5,15 @@ import { NextRequest } from 'next/server';
 
 let ready: Promise<unknown> | null = null;
 function ensureTable() {
+  // Best effort only. If the DB user isn't allowed to CREATE tables, ignore the error:
+  // the table is expected to already exist (create it once in the Neon SQL Editor).
   if (!ready) {
     ready = sql`
       CREATE TABLE IF NOT EXISTS rate_limits (
         key TEXT PRIMARY KEY,
         count INTEGER NOT NULL,
         reset_at TIMESTAMPTZ NOT NULL
-      )`.catch((e) => { ready = null; throw e; });
+      )`.catch((e) => { console.warn('[RATE LIMIT] could not auto-create table, assuming it exists:', e?.message); });
   }
   return ready;
 }
