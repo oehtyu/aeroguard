@@ -18,20 +18,27 @@ function ensureTable() {
   return ready;
 }
 
-/** Counts one hit for `key`. allowed=false once more than `limit` hits happen inside `windowSec`. */
+/** Counts one hit for `key`. allowed=false once more than `limit` hits happen inside `windowSec`.
+ *  If the rate_limits table has any problem, this FAILS OPEN (allows the request and logs the error)
+ *  so a rate-limiter problem can never lock everybody out of logging in. */
 export async function rateLimit(key: string, limit: number, windowSec: number) {
-  await ensureTable();
-  const rows = await sql`
-    INSERT INTO rate_limits (key, count, reset_at)
-    VALUES (${key}, 1, NOW() + (${windowSec}::int * INTERVAL '1 second'))
-    ON CONFLICT (key) DO UPDATE SET
-      count    = CASE WHEN rate_limits.reset_at <= NOW() THEN 1 ELSE rate_limits.count + 1 END,
-      reset_at = CASE WHEN rate_limits.reset_at <= NOW() THEN EXCLUDED.reset_at ELSE rate_limits.reset_at END
-    RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM (reset_at - NOW()))))::int AS retry_after`;
-  if (Math.random() < 0.01) {
-    sql`DELETE FROM rate_limits WHERE reset_at < NOW() - INTERVAL '1 day'`.catch(() => {});
+  try {
+    await ensureTable();
+    const rows = await sql`
+      INSERT INTO rate_limits (key, count, reset_at)
+      VALUES (${key}, 1, NOW() + (${windowSec}::int * INTERVAL '1 second'))
+      ON CONFLICT (key) DO UPDATE SET
+        count    = CASE WHEN rate_limits.reset_at <= NOW() THEN 1 ELSE rate_limits.count + 1 END,
+        reset_at = CASE WHEN rate_limits.reset_at <= NOW() THEN EXCLUDED.reset_at ELSE rate_limits.reset_at END
+      RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM (reset_at - NOW()))))::int AS retry_after`;
+    if (Math.random() < 0.01) {
+      sql`DELETE FROM rate_limits WHERE reset_at < NOW() - INTERVAL '1 day'`.catch(() => {});
+    }
+    return { allowed: rows[0].count <= limit, retryAfter: rows[0].retry_after as number };
+  } catch (err: any) {
+    console.error('[RATE LIMIT] DISABLED (failing open):', err?.message);
+    return { allowed: true, retryAfter: 1 };
   }
-  return { allowed: rows[0].count <= limit, retryAfter: rows[0].retry_after as number };
 }
 
 export function clientIp(req: NextRequest) {
