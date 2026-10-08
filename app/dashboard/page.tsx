@@ -1,15 +1,15 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { validatePassword } from '@/lib/password'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import { MapObject, findNearestSafeZone, normaliseObject } from '../components/MapEditor'
+import { MapObject, findNearestSafeZone } from '../components/MapEditor'
 import HelpGuide from '../components/HelpGuide'
 import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
 
+const SESSION_KEY     = 'ag_user'
 
 const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
 
@@ -122,6 +122,10 @@ const GROUND_FLOOR: Record<string,string> = {
 
 // ── STATIC AREAS ─────────────────────────────────────────────
 type AreaStyle = 'gray' | 'tree' | 'building' | 'wall' | 'open'
+// BPSU DRRM's two real assembly/open-ground points — reused below as both a labeled area on
+// the map and (further down) as the hardcoded safe_zone targets the evacuation routes aim for.
+const ZONE2 = { x:246, y:253, w:300, h:79  } // the quadrangle — serves Medina Lacson & COAS
+const ZONE3 = { x:834, y:150, w:174, h:88  } // open green area beside CAHS/Library — serves CAHS
 const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; style:AreaStyle }[] = [
   // Walls
   { x:0,   y:0,   w:405, h:15, label:'', style:'wall' },
@@ -139,11 +143,11 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
   // Main row (around Medina Lacson)
   { x:0,   y:153, w:235, h:178, label:'Trees / Green Area', style:'tree' },
   { x:675, y:154, w:144, h:74,  label:'Campus Library',     style:'building' },
-  { x:834, y:150, w:174, h:88,  label:'Trees / Green Area', style:'tree' },
+  { x:ZONE3.x, y:ZONE3.y, w:ZONE3.w, h:ZONE3.h,  label:'Zone 3 Assembly Area', style:'open' },
   { x:675, y:238, w:134, h:20,  label:'Parking Area',       style:'building' },
 
   // Quadrangle row
-  { x:246, y:253, w:300, h:79, label:'Quadrangle',       style:'open' },
+  { x:ZONE2.x, y:ZONE2.y, w:ZONE2.w, h:ZONE2.h, label:'Zone 2 Assembly Area (Quadrangle)', style:'open' },
   { x:644, y:270, w:166, h:20, label:'Unnamed Building', style:'gray' },
   { x:834, y:249, w:174, h:66, label:'Sari-Gamit Court', style:'building' },
   { x:651, y:302, w:152, h:24, label:'Food Court',       style:'building' },
@@ -172,6 +176,54 @@ const BUILDING_GATE: Record<string,string> = {
 
 // ── BUILDING / ROOM OPTIONS ───────────────────────────────────
 const BUILDINGS_LIST = ['Medina Lacson Building','COAS Building','CAHS Building']
+
+// ── EVACUATION PLANNING DATA ─────────────────────────────────
+// The map above is drawn from fixed numbers for simplicity, but routing still needs real
+// geometry to reason about ("don't cut through a building"). This converts that same fixed
+// layout into the MapObject[] shape the existing route planner (components/evacuation.ts)
+// and extinguisher-ranking logic (components/extinguishers.ts) already understand — the
+// same code that used to run on the admin's live map, just fed a map that can't be edited
+// anymore. Two open spaces double as BPSU DRRM's actual assembly points (an open area, not
+// a gate): the quadrangle for Medina Lacson & COAS, and the green area beside CAHS/Library.
+let _evacId = 1
+const mkEvac = (object_type: MapObject['object_type'], name: string, x: number, y: number, width: number, height: number, extra: Partial<MapObject> = {}): MapObject => ({
+  map_object_id: _evacId++, object_type, name, color: '#000', x, y, width, height,
+  parent_id: null, floor: null, ...extra,
+})
+
+const EVAC_OBJECTS: MapObject[] = (() => {
+  const items: MapObject[] = []
+  for (const b of BUILDINGS) {
+    const building = mkEvac('building', b.name, b.x, b.y, b.w, b.h)
+    items.push(building)
+    for (const f of b.floors) for (const r of f.rooms) {
+      items.push(mkEvac('room', `Room ${r.l}`, r.x, f.y, r.w, f.h, { parent_id: building.map_object_id, floor: f.label }))
+    }
+  }
+  for (const g of GATES) items.push(mkEvac('gate', g.label, g.x, g.y, g.w, g.h))
+  for (const a of STATIC_AREAS) {
+    if (a.style === 'wall') items.push(mkEvac('wall', a.label || 'Wall', a.x, a.y, a.w, a.h))
+    else if (a.style === 'tree') items.push(mkEvac('tree_area', a.label || 'Trees', a.x, a.y, a.w, a.h))
+    else if (a.style === 'building' || a.style === 'gray') items.push(mkEvac('building', a.label || 'Building', a.x, a.y, a.w, a.h))
+    // 'open' areas (the quadrangle) are walkable ground, not obstacles.
+  }
+  items.push(mkEvac('safe_zone', 'Zone 2 Assembly Area', ZONE2.x, ZONE2.y, ZONE2.w, ZONE2.h))
+  items.push(mkEvac('safe_zone', 'Zone 3 Assembly Area', ZONE3.x, ZONE3.y, ZONE3.w, ZONE3.h))
+  return items
+})()
+
+function evacBuilding(name: string): MapObject | null {
+  return EVAC_OBJECTS.find(o => o.object_type === 'building' && o.name === name) || null
+}
+function evacRoom(buildingName: string, floor: string | undefined, room: string): MapObject | null {
+  const b = evacBuilding(buildingName)
+  if (!b) return null
+  return EVAC_OBJECTS.find(o => o.object_type === 'room' && o.parent_id === b.map_object_id && o.name === room && (!floor || !o.floor || o.floor === floor)) || null
+}
+// The three buildings' own reference routes to their zone, computed once — these are the
+// permanent green dashed lines always shown on the map, regardless of any active alert.
+const REFERENCE_ROUTES = BUILDINGS.map(b => ({ building: b.name, plan: planEvacuation(evacBuilding(b.name), null, EVAC_OBJECTS) }))
+const svgPoints = (pts: { cx:number; cy:number }[]) => pts.map(p => `${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')
 
 const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:string }[]> = {
   'Medina Lacson Building': [
@@ -312,33 +364,61 @@ const effectiveStatus=(d:any)=>{
 const fmtTime=(ts:string)=>{const d=new Date(ts);return d.toLocaleDateString('en-PH',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 const timeAgo=(ts:string)=>{const s=(Date.now()-new Date(ts).getTime())/1000;if(s<60)return`${Math.floor(s)}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;return`${Math.floor(s/3600)}h ago`}
 
-// A report's photo is fetched only when someone actually opens it, not on every poll
+// A report's photo field holds either the new format — a JSON array of up to 3 data
+// URLs, e.g. '["data:image/jpeg;base64,...","data:image/jpeg;base64,..."]' — or, for
+// reports submitted before multi-photo support, a single bare data URL string. This
+// reads either shape into a plain array so the rest of the component never has to care.
+function parsePhotos(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return []
+  if (raw.startsWith('data:image/')) return [raw] // legacy single-photo reports
+  try {
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x.startsWith('data:image/')) : []
+  } catch { return [] }
+}
+
+// A report's photos are fetched only when someone actually opens it, not on every poll
 // (the list APIs only ever send `has_photo`, never the image bytes — see api/reports).
 // Loaded photos stay cached here per report_id for the lifetime of the tab, so
 // re-opening a report already seen this session shows it instantly with no re-fetch.
-const reportPhotoCache: Record<string, string> = {}
+const reportPhotoCache: Record<string, string[]> = {}
 function ReportPhoto({ reportId, userId, size = 220 }: { reportId: number; userId: number; size?: number }) {
-  const [src, setSrc] = useState<string | null>(reportPhotoCache[reportId] || null)
+  const [photos, setPhotos] = useState<string[] | null>(reportPhotoCache[reportId] || null)
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
-  const [zoomed, setZoomed] = useState(false)
+  const [zoomIndex, setZoomIndex] = useState<number | null>(null)
   async function load() {
     setState('loading')
     try {
       const res = await fetch(`/api/reports?report_id=${reportId}&user_id=${userId}`).then(r => r.json())
-      if (!res.success || !res.data?.photo_data) { setState('error'); return }
-      reportPhotoCache[reportId] = res.data.photo_data
-      setSrc(res.data.photo_data); setState('idle')
+      const parsed = parsePhotos(res.data?.photo_data)
+      if (!res.success || !parsed.length) { setState('error'); return }
+      reportPhotoCache[reportId] = parsed
+      setPhotos(parsed); setState('idle')
     } catch { setState('error') }
   }
-  if (src) return (
+  if (photos && photos.length) return (
     <>
-      <img src={src} alt="Submitted proof — click to enlarge" onClick={() => setZoomed(true)}
-        style={{ marginTop: 8, maxWidth: size, borderRadius: 6, display: 'block', cursor: 'zoom-in' }} />
-      {zoomed && (
-        <div onClick={() => setZoomed(false)} role="dialog" aria-modal="true"
+      <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {photos.map((src, i) => (
+          <img key={i} src={src} alt={`Submitted proof ${i + 1} of ${photos.length} — click to enlarge`} onClick={() => setZoomIndex(i)}
+            style={{ maxWidth: photos.length > 1 ? Math.min(size, 140) : size, borderRadius: 6, display: 'block', cursor: 'zoom-in' }} />
+        ))}
+      </div>
+      {zoomIndex !== null && (
+        <div onClick={() => setZoomIndex(null)} role="dialog" aria-modal="true"
           style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
-          <img src={src} alt="Submitted proof — full resolution" style={{ maxWidth: '96vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 4 }} />
-          <button onClick={() => setZoomed(false)} aria-label="Close"
+          <img src={photos[zoomIndex]} alt={`Submitted proof ${zoomIndex + 1} of ${photos.length} — full resolution`}
+            style={{ maxWidth: '96vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 4 }} />
+          {photos.length > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); setZoomIndex((zoomIndex! - 1 + photos.length) % photos.length) }} aria-label="Previous photo"
+                style={{ position: 'fixed', left: 16, top: '50%', transform: 'translateY(-50%)', width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>‹</button>
+              <button onClick={e => { e.stopPropagation(); setZoomIndex((zoomIndex! + 1) % photos.length) }} aria-label="Next photo"
+                style={{ position: 'fixed', right: 16, top: '50%', transform: 'translateY(-50%)', width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>›</button>
+              <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', color: '#fff', fontSize: '.75rem', fontFamily: 'var(--mono)', background: 'rgba(0,0,0,.4)', padding: '3px 10px', borderRadius: 10 }}>{zoomIndex + 1} / {photos.length}</div>
+            </>
+          )}
+          <button onClick={() => setZoomIndex(null)} aria-label="Close"
             style={{ position: 'fixed', top: 16, right: 20, width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>
         </div>
       )}
@@ -363,13 +443,19 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
   const [openReport, setOpenReport] = useState<any>(null)
   const [actionsTaken, setActionsTaken] = useState('')
     const [remarks, setRemarks] = useState('')
-  const [photoData, setPhotoData] = useState('')
+  const [photos, setPhotos] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [compressing, setCompressing] = useState(false)
 
-  // Resizes/compresses the photo client-side before it ever leaves the
-  // browser, so a report stays a reasonable size in the database no matter
-  // how large the original phone photo was.
+  const MAX_PHOTOS = 3
+  const MAX_PHOTO_BYTES = 5 * 1024 * 1024 // 5MB of actual image data, per photo
+
+  // Resizes the photo client-side (so a normal phone photo still leaves the browser
+  // reasonably sized) while keeping it well above the old 800px thumbnail-grade output —
+  // 1600px keeps text/labels in an evidence photo readable when someone zooms in. If a
+  // very high-resolution photo still comes out over 5MB at that size, quality is stepped
+  // down a few times until it fits, instead of failing outright.
   const handlePhoto = (file: File) => {
     // The <input accept="image/*"> below is only a hint to the OS file picker —
     // on Windows, some mobile browsers, and whenever "All Files" is chosen, a
@@ -382,26 +468,45 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
       setErr(`"${file.name}" isn't an image, so it can't be attached here — only photos (JPG, PNG, etc.) are supported. The file was not saved.`)
       return
     }
-    setErr('')
+    if (photos.length >= MAX_PHOTOS) {
+      setErr(`You can attach up to ${MAX_PHOTOS} photos per report. Remove one before adding another.`)
+      return
+    }
+    setErr(''); setCompressing(true)
     const reader = new FileReader()
     reader.onerror = () => {
+      setCompressing(false)
       setErr(`Could not read "${file.name}". Please try again or pick a different photo.`)
     }
     reader.onload = () => {
       const img = new Image()
       img.onload = () => {
-        const maxDim = 800
+        const maxDim = 1600
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
         const canvas = document.createElement('canvas')
         canvas.width = img.width * scale
         canvas.height = img.height * scale
         const ctx = canvas.getContext('2d')
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
-        setPhotoData(canvas.toDataURL('image/jpeg', 0.7))
+        // dataURL base64 is ~4/3 the raw byte count, so compare against that, not MAX_PHOTO_BYTES directly.
+        const maxDataUrlLen = Math.ceil(MAX_PHOTO_BYTES * 4 / 3) + 100
+        let quality = 0.85
+        let dataUrl = canvas.toDataURL('image/jpeg', quality)
+        while (dataUrl.length > maxDataUrlLen && quality > 0.4) {
+          quality -= 0.15
+          dataUrl = canvas.toDataURL('image/jpeg', quality)
+        }
+        setCompressing(false)
+        if (dataUrl.length > maxDataUrlLen) {
+          setErr(`"${file.name}" is still too large even after compression. Please try a smaller photo or crop it first.`)
+          return
+        }
+        setPhotos(prev => prev.length < MAX_PHOTOS ? [...prev, dataUrl] : prev)
       }
       // Belt-and-suspenders: if the browser accepted the file as "image/*" but
       // still can't actually decode it, tell the user instead of staying silent.
       img.onerror = () => {
+        setCompressing(false)
         setErr(`Could not open "${file.name}" as an image. Please try a different photo.`)
       }
       img.src = reader.result as string
@@ -415,10 +520,10 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
     try {
       const res = await fetch('/api/reports', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks, photo_data: photoData || null }),
+        body: JSON.stringify({ report_id: openReport.report_id, user_id: user.user_id, actions_taken: actionsTaken, remarks, photo_data: photos.length ? JSON.stringify(photos) : null }),
       }).then(r => r.json())
       if (!res.success) { setErr(res.message || 'Could not save. Please try again.'); return }
-      setOpenReport(null); setActionsTaken(''); setRemarks(''); setPhotoData('')
+      setOpenReport(null); setActionsTaken(''); setRemarks(''); setPhotos([])
       onSubmitted()
     } catch (error: any) {
       setErr('Network error — check your connection and try again.')
@@ -459,7 +564,7 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
               {r.status.toUpperCase()}
             </span>
             {r.status === 'Incomplete' && (
-              <button onClick={() => { setOpenReport(r); setActionsTaken(''); setRemarks(''); setErr('') }}
+              <button onClick={() => { setOpenReport(r); setActionsTaken(''); setRemarks(''); setErr(''); setPhotos([]) }}
                       style={{ padding: '7px 14px', background: 'var(--accent2)', color: 'white', border: 'none', borderRadius: 6, fontSize: '.78rem', fontWeight: 600, cursor: 'pointer' }}>
                 Complete Report
               </button>
@@ -484,10 +589,24 @@ function ReportingPanel({ reports, user, isAdmin, onSubmitted }: { reports: any[
                       placeholder="Anything else worth noting?"
                       style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6, padding: 10, color: 'var(--text)', fontSize: '.85rem', fontFamily: 'var(--font)', resize: 'vertical', marginBottom: 12 }} />
 
-            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Photo (optional)</label>
-            <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handlePhoto(e.target.files[0])}
-                   style={{ width: '100%', color: 'var(--text)', fontSize: '.8rem', marginBottom: 12 }} />
-            {photoData && <img src={photoData} alt="Preview" style={{ maxWidth: 160, borderRadius: 6, marginBottom: 12, display: 'block' }} />}
+            <label style={{ fontSize: '.78rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Photos (optional) — up to {MAX_PHOTOS}, {photos.length}/{MAX_PHOTOS} added</label>
+            {photos.length < MAX_PHOTOS && (
+              <input key={photos.length} type="file" accept="image/*" disabled={compressing}
+                     onChange={e => e.target.files?.[0] && handlePhoto(e.target.files[0])}
+                     style={{ width: '100%', color: 'var(--text)', fontSize: '.8rem', marginBottom: 8 }} />
+            )}
+            {compressing && <div style={{ fontSize: '.75rem', color: 'var(--muted)', marginBottom: 8 }}>Compressing photo…</div>}
+            {photos.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {photos.map((p, i) => (
+                  <div key={i} style={{ position: 'relative' }}>
+                    <img src={p} alt={`Preview ${i + 1}`} style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+                    <button type="button" onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))} aria-label="Remove photo"
+                      style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: 'var(--red)', color: '#fff', border: '2px solid var(--panel)', fontSize: '.65rem', lineHeight: '16px', cursor: 'pointer', padding: 0 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {err && <div style={{ color: 'var(--red)', fontSize: '.78rem', marginBottom: 12 }}>{err}</div>}
 
@@ -514,8 +633,15 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
 
   const activeEvacInc=incidents.filter(i=>!i.resolved&&(i.threat_level==='Orange'||i.threat_level==='Red')).slice(0,1)[0]
   const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
-  const activeRouteId=activeEvacDevice&&BUILDING_EVAC_ROUTE[activeEvacDevice.building]
-  const activeRoute=activeRouteId?EVAC_ROUTES.find(r=>r.id===activeRouteId):null
+  const activeBuildingObj=activeEvacDevice?evacBuilding(activeEvacDevice.building):null
+  const activeRoomObj=activeEvacDevice&&activeBuildingObj?evacRoom(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room):null
+  // Room-specific when we know the exact room (so the line starts at the right spot even on
+  // a different floor), falling back to the building-level reference route otherwise.
+  const activePlan=activeBuildingObj?(activeRoomObj?planEvacuation(activeBuildingObj,activeRoomObj,EVAC_OBJECTS):REFERENCE_ROUTES.find(r=>r.building===activeBuildingObj!.name)?.plan)??null:null
+  // The 3 nearest AVAILABLE extinguishers to the alert — these pulse green below, same ones
+  // listed in the guidance card.
+  const activeNearest=activeEvacDevice?nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment}):null
+  const pulseExtIds=new Set((activeNearest?.usable||[]).map(n=>String(n.item.equipment_id)))
   return (
     <div style={{position:'relative',width:'100%'}}>
       <style>{`
@@ -539,29 +665,43 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
         {STATIC_AREAS.map((a,i)=>(
           <g key={`area-${i}`}>
             {a.label && <title>{a.label}</title>}
-            <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={AREA_FILL[a.style]} rx={a.style==='wall'?1:3}
-                  stroke={a.style==='open'?'rgba(34,197,94,0.25)':'rgba(255,255,255,0.08)'}
-                  strokeDasharray={a.style==='open'?'4 3':undefined} strokeWidth={1}/>
+            <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={a.style==='open'?'rgba(34,197,94,0.1)':AREA_FILL[a.style]} rx={a.style==='wall'?1:3}
+                  stroke={a.style==='open'?'#22c55e':'rgba(255,255,255,0.08)'}
+                  strokeDasharray={a.style==='open'?'5 4':undefined} strokeWidth={a.style==='open'?1.5:1}/>
             {a.style==='building' && a.label && a.w>28 && a.h>14 && (
               <text x={a.x+a.w/2} y={a.y+a.h/2+2.5} fill="rgba(255,255,255,0.65)" fontSize={7.5} textAnchor="middle"
                     fontFamily="monospace" style={{pointerEvents:'none'}}>{a.label.toUpperCase()}</text>
             )}
+            {a.style==='open' && a.label && (
+              <text x={a.x+a.w/2} y={a.y+a.h/2+2.5} fill="#22c55e" fontSize={7.5} textAnchor="middle"
+                    fontFamily="monospace" fontWeight="bold" style={{pointerEvents:'none'}}>🚩 {a.label.toUpperCase()}</text>
+            )}
           </g>
         ))}
 
-        {/* Planned evacuation routes (always visible, permanent reference lines) */}
-        {EVAC_ROUTES.map(r=>{
-          const isActive=activeRoute&&r.id===activeRoute.id
-          const color=isActive?'#ef4444':'#22c55e'
+        {/* Planned evacuation routes — a fixed grid-pathfinder plans each one so it walks around
+            buildings and walls on its way to the correct zone (Zone 2 for Medina Lacson/COAS,
+            Zone 3 for CAHS), never through them. Green = always-visible reference route for each
+            building; red = the live route for whichever room is actively alerting right now. */}
+        {REFERENCE_ROUTES.map(r=>{
+          if(!r.plan) return null
+          const isActive=activePlan&&activeBuildingObj?.name===r.building
+          if(isActive) return null // drawn separately below, on top, from the room-specific plan
           return (
-            <g key={r.id}>
-              <polyline points={r.points} fill="none" stroke={color} strokeWidth={isActive?7:5} opacity={isActive?0.25:0.18}/>
-              <polyline points={r.points} fill="none" stroke={color} strokeWidth={isActive?4:2.5}
-                        strokeDasharray={isActive?undefined:'7 5'} opacity={isActive?1:0.9}
-                        markerEnd={isActive?'url(#evacArrowRed)':'url(#evacArrow)'}/>
+            <g key={r.building}>
+              <polyline points={svgPoints(r.plan.points)} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18}/>
+              <polyline points={svgPoints(r.plan.points)} fill="none" stroke="#22c55e" strokeWidth={2.5}
+                        strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)"/>
             </g>
           )
         })}
+        {activePlan&&(
+          <g>
+            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={7} opacity={0.25}/>
+            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={4}
+                      opacity={1} markerEnd="url(#evacArrowRed)"/>
+          </g>
+        )}
         <defs>
           <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M1 1L9 5L1 9Z" fill="#22c55e"/>
@@ -611,6 +751,12 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
                onMouseEnter={()=>setTip({type:'ext',data:e,x:pos.x,y:pos.y})}
                onMouseLeave={()=>setTip(null)}
                onClick={ev=>{ev.stopPropagation();setTip((t:any)=>t&&t.type==='ext'&&t.data.equipment_id===e.equipment_id?null:{type:'ext',data:e,x:pos.x,y:pos.y})}}>
+              {pulseExtIds.has(String(e.equipment_id)) && (
+                <circle cx={pos.x} cy={pos.y} r={10} fill="none" stroke="#22c55e" strokeWidth={2}>
+                  <animate attributeName="r" values="8;15;8" dur="1.4s" repeatCount="indefinite"/>
+                  <animate attributeName="opacity" values="0.9;0;0.9" dur="1.4s" repeatCount="indefinite"/>
+                </circle>
+              )}
               <circle cx={pos.x} cy={pos.y} r={7} fill="rgba(249,115,22,0.2)" stroke={strokeColor} strokeWidth={1.5}/>
               <text x={pos.x} y={pos.y+4} textAnchor="middle" fontSize={10} fill={strokeColor}>🧯</text>
             </g>
@@ -670,7 +816,9 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',background:l.color}}/>{l.label}</div>
         ))}
         <div style={{display:'flex',alignItems:'center',gap:5}}><span>🧯</span> Fire Extinguisher</div>
-        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.15)',border:'1px solid #22c55e'}}/> Assembly Area</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',border:'2px solid #22c55e'}}/> Nearest extinguisher (active alert)</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.1)',border:'1px solid #22c55e'}}/> 🚩 Zone Assembly Area</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:2,background:'#22c55e'}}/> Evacuation route</div>
       </div>
     </div>
   )
@@ -729,8 +877,6 @@ export default function Dashboard() {
   const [incidents,setIncidents]=useState<any[]>([])
   const [users,setUsers]=useState<any[]>([])
   const [equipment,setEquipment]=useState<any[]>([])
-  const [mapObjects, setMapObjects] = useState<MapObject[]>([])
-  const mapRequestRef = useRef(0)
 
   const [reports,setReports]=useState<any[]>([])
   const [viewIncident,setViewIncident]=useState<any>(null)
@@ -806,39 +952,28 @@ useEffect(() => {
 
   const isAdmin=user?.user_type==='Admin'
 
-  useEffect(()=>{
-  let cancelled=false
-  let cleanup=()=>{}
-  ;(async()=>{
-  // The session is an httpOnly cookie (JS can't read it), so ask the server who is signed in.
-  let sessionUser:any
-  try{
-    const res=await fetch('/api/users/me',{cache:'no-store'})
-    const d=await res.json()
-    if(!d.success||!d.user){router.push('/login');return}
-    sessionUser=d.user
-  }catch{router.push('/login');return}
-  if(cancelled)return
-  userRef.current=sessionUser
+       useEffect(()=>{
+  const stored=localStorage.getItem(SESSION_KEY)
+  if(!stored){router.push('/login');return}
+  const sessionUser=JSON.parse(stored)
   setUser(sessionUser)
-  loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+    loadDevices();loadIncidents();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
 
-  // Pick up changes an admin makes to THIS account (role, name, phone...) without a re-login.
-  // The role always comes from the database.
+  // Pick up changes an admin makes to THIS account (role, name, phone...) within a few
+  // seconds instead of only at the next login. The role always comes from the database.
   const ADMIN_VIEWS=['users','incidents','devices','equipment']
   const syncSession=async()=>{
     try{
       const cur=userRef.current||sessionUser
-      const res=await fetch('/api/users/me',{cache:'no-store'})
-      if(res.status===401){router.push('/login');return}   // cookie expired or account deleted
+      const res=await fetch(`/api/users/me?user_id=${cur.user_id}`,{cache:'no-store'})
       const d=await res.json()
+      if(d.deleted){localStorage.removeItem(SESSION_KEY);router.push('/login');return}
       if(!d.success||!d.user)return
       const fresh=d.user
-      // A different account signed in from another tab (the cookie is shared) -> reload as that account.
-      if(fresh.user_id!==cur.user_id){window.location.reload();return}
       const keys=['user_type','full_name','username','email','phone','building']
       if(!keys.some(k=>(cur[k]??'')!==(fresh[k]??'')))return
       const merged={...cur,...fresh}
+      localStorage.setItem(SESSION_KEY,JSON.stringify(merged))
       userRef.current=merged
       setUser(merged)
       if(fresh.user_type!==cur.user_type){
@@ -847,35 +982,38 @@ useEffect(() => {
       }
     }catch{}
   }
+  syncSession()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-  // Devices, incidents, equipment, map and reports all refresh every 3s (same speed as before,
-  // so admin changes show up on every open tab within ~3s). Only the session check is slower (30s).
-  let tick=0
-  const r=setInterval(()=>{
-    tick++
-    loadDevices()
-    loadIncidents(incFilterRef.current)
-    loadEquipment()
-    loadMapObjects()
-    loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')
-    if(tick%10===0)syncSession()
-  },3000)
-  const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
-  const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
+    const r = setInterval(() => {
+  loadDevices()
+  loadIncidents(incFilterRef.current)
+  loadEquipment()
+  syncSession()
+  loadReports(sessionUser.user_id, (userRef.current||sessionUser).user_type === 'Admin')
+
+}, 3000)
+    const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
+    const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
+  // Keep every open tab in sync with the session actually stored in this browser.
+  // If a different account logs in (or logs out) in another tab, this tab reloads
+  // so it always reflects the one true active session instead of drifting stale.
+  const onStorage=(e:StorageEvent)=>{
+    if(e.key===SESSION_KEY){window.location.reload()}
+  }
   document.addEventListener('visibilitychange',onVisible)
-  cleanup=()=>{
+  window.addEventListener('storage',onStorage)
+        return()=>{
     clearInterval(t);clearInterval(r);clearInterval(rr)
     document.removeEventListener('visibilitychange',onVisible)
+    window.removeEventListener('storage',onStorage)
   }
-  })()
-  return()=>{cancelled=true;cleanup()}
   },[])
   // The browser tells us the instant it drops/regains a connection — no need to
   // wait out 3 failed polls for that case. Reconnecting refreshes everything
   // immediately instead of waiting for the next scheduled poll.
   useEffect(()=>{
     const goOffline=()=>setConnLost(true)
-    const goOnline=()=>{loadDevices();loadIncidents(incFilterRef.current);loadEquipment();loadMapObjects()}
+    const goOnline=()=>{loadDevices();loadIncidents(incFilterRef.current);loadEquipment()}
     window.addEventListener('offline',goOffline)
     window.addEventListener('online',goOnline)
     return()=>{window.removeEventListener('offline',goOffline);window.removeEventListener('online',goOnline)}
@@ -889,7 +1027,6 @@ useEffect(() => {
   const timeoutId=setTimeout(()=>controller.abort(),10000)
   try{
     const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:controller.signal})
-    if(res.status===401){router.push('/login');return {success:false,message:'Session expired. Please sign in again.'}}
     const data=await res.json()
     consecutiveFailRef.current=0
     setConnLost(false)
@@ -930,15 +1067,6 @@ useEffect(() => {
   const loadIncidents=async(level='')=>{const d=await api(`/api/incidents${level?`?level=${level}`:''}`);if(d.success)setIncidents(d.data)}
   const loadUsers=async()=>{const d=await api('/api/users');if(d.success)setUsers(d.data)}
   const loadEquipment=async()=>{const d=await api('/api/equipment');if(d.success)setEquipment(d.data)}
-  const loadMapObjects = async () => {
-  const requestId = ++mapRequestRef.current
-  const d = await api('/api/map')
-  // A slower, older request must never overwrite a newer rename/move.
-  if (d.success && requestId === mapRequestRef.current) {
-    setMapObjects(d.data)
-  }
-}
-
   function switchView(v:string){
     setView(v)
     if(v==='users')loadUsers()
@@ -949,14 +1077,13 @@ useEffect(() => {
   loadDevices()
   loadIncidents()
   loadEquipment()
-  loadMapObjects()
 }
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
+    localStorage.removeItem(SESSION_KEY);
     if(auto)showToast('info','Session Expired','Logged out due to inactivity.')
-    // Ask the server to clear the httpOnly cookie (JS can't delete it by itself).
-    fetch('/api/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>router.push('/login'))
+    router.push('/login')
   }
 
   // ── OCCUPANCY: check if a room already has a device ──────────
@@ -1019,7 +1146,7 @@ setModal(null);loadUsers()
     const d=await api('/api/users','PUT',{mode:'self',user_id:user.user_id,full_name:form.full_name,username:form.username,email:form.email||'',phone:form.phone||''})
     if(!d.success){showToast('error','Error',d.message);return}
     const updated={...user,...d.user}
-    userRef.current=updated
+    localStorage.setItem(SESSION_KEY,JSON.stringify(updated))
     setUser(updated)
     showToast('success','Profile Updated','Your profile has been updated.')
     setModal(null);loadUsers()
@@ -1028,7 +1155,7 @@ setModal(null);loadUsers()
   async function changePassword(){
     if(!form.current_password){setFormErrors({current_password:'Current password required.'});return}
     if(!form.new_password){setFormErrors({new_password:'New password required.'});return}
-    {const pwErr=validatePassword(form.new_password);if(pwErr){setFormErrors({new_password:pwErr});return}}
+    if(form.new_password.length<8){setFormErrors({new_password:'Minimum 8 characters.'});return}
     if(form.new_password!==form.confirm_password){setFormErrors({confirm_password:'Passwords do not match.'});return}
     setFormErrors({})
     const d=await api('/api/users/set-password','PUT',{user_id:user.user_id,current_password:form.current_password,new_password:form.new_password})
@@ -1209,10 +1336,10 @@ function declineResponse() {
     }
   },[activeEvacDevice?.device_id])
 
-    const activeBuildingObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='building'&&o.name===activeEvacDevice.building)
-  const activeRoomObj=activeEvacDevice&&mapObjects.find(o=>o.object_type==='room'&&o.parent_name===activeEvacDevice.building&&o.name===activeEvacDevice.room&&(!activeEvacDevice.floor||!o.floor||o.floor===activeEvacDevice.floor))
+    const activeBuildingObj=activeEvacDevice?evacBuilding(activeEvacDevice.building):null
+  const activeRoomObj=activeEvacDevice&&activeBuildingObj?evacRoom(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room):null
   // Same planner the map uses, so the guidance names the assembly area the drawn route actually reaches.
-  const activeSafeZone=planEvacuation(activeBuildingObj,activeRoomObj,mapObjects)?.safeZone||findNearestSafeZone(activeBuildingObj,mapObjects)
+  const activeSafeZone=activeBuildingObj?(planEvacuation(activeBuildingObj,activeRoomObj,EVAC_OBJECTS)?.safeZone||findNearestSafeZone(activeBuildingObj,EVAC_OBJECTS)):null
   const activeSteps=activeSafeZone&&activeEvacDevice?[
     'Proceed to the nearest exit.',
     `Head to the ${activeSafeZone.name} assembly area.`,
@@ -1451,7 +1578,7 @@ function declineResponse() {
               building={activeEvacDevice.building}
               floor={activeEvacDevice.floor}
               assemblyArea={activeSafeZone?.name||null}
-              nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj?normaliseObject(activeRoomObj):null,objects:mapObjects.map(normaliseObject),equipment})}
+              nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment})}
               isResponder={myResponses.has(activeEvacDevice.device_id)}
               onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
             />
@@ -1923,7 +2050,7 @@ function declineResponse() {
               </div>
               <div style={{padding:22,display:'flex',flexDirection:'column',gap:14}}>
                 <div>{lbl('Current Password')}{input('current_password','••••••••','password')}</div>
-                <div>{lbl('New Password (8+ chars, A-z, 0-9, symbol)')}{input('new_password','••••••••','password')}</div>
+                <div>{lbl('New Password (min 8 chars)')}{input('new_password','••••••••','password')}</div>
                 <div>{lbl('Confirm New Password')}{input('confirm_password','••••••••','password')}</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>

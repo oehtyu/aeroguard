@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { getSessionUserId, unauthorized } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,10 +19,7 @@ export const revalidate = 0;
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    // Identity from the session cookie — the ?user_id= in the URL is ignored.
-    const sessionId = await getSessionUserId(req);
-    if (!sessionId) return unauthorized();
-    const user_id = String(sessionId);
+    const user_id = searchParams.get('user_id');
     const all = searchParams.get('all');
     const report_id = searchParams.get('report_id');
 
@@ -75,14 +71,35 @@ export async function GET(req: NextRequest) {
 // PUT /api/reports — submit a completed report. Only allowed while it's
 // still Incomplete and only by the user who owns it; once Submitted, no
 // further edits are possible (matches "no further actions until then").
+// Up to 3 photos per report, each already resized/compressed client-side (max 1600px edge,
+// JPEG, quality stepped down automatically if needed) before it ever gets here. photo_data
+// arrives as a JSON array of data URLs (`'["data:image/jpeg;base64,...", ...]'`). This is
+// just a server-side backstop against an oversized or hand-crafted payload — the dashboard
+// itself already keeps every photo under this limit.
+const MAX_PHOTOS = 3;
+const MAX_PHOTO_DATA_URL_LENGTH = 7_000_000; // ~5 MB of actual image data once base64 overhead is backed out
+
+function validatePhotoData(photo_data: unknown): { ok: true; value: string | null } | { ok: false; message: string } {
+  if (!photo_data) return { ok: true, value: null };
+  if (typeof photo_data !== 'string') return { ok: false, message: 'Invalid photo data.' };
+  let photos: unknown;
+  try { photos = JSON.parse(photo_data); } catch { return { ok: false, message: 'Invalid photo data.' }; }
+  if (!Array.isArray(photos) || photos.length === 0) return { ok: false, message: 'Invalid photo data.' };
+  if (photos.length > MAX_PHOTOS) return { ok: false, message: `You can attach up to ${MAX_PHOTOS} photos per report.` };
+  for (const p of photos) {
+    if (typeof p !== 'string' || !p.startsWith('data:image/')) return { ok: false, message: 'One of the attached photos is invalid. Please re-select it and try again.' };
+    if (p.length > MAX_PHOTO_DATA_URL_LENGTH) return { ok: false, message: 'One of the attached photos is too large even after compression. Please try a smaller photo.' };
+  }
+  return { ok: true, value: photo_data };
+}
+
 export async function PUT(req: NextRequest) {
   try {
-        const { report_id, actions_taken, remarks, photo_data } = await req.json();
-    const sessionId = await getSessionUserId(req);   // report owner = the signed-in user, not whatever the body says
-    if (!sessionId) return unauthorized();
-    const user_id = String(sessionId);
+        const { report_id, user_id, actions_taken, remarks, photo_data } = await req.json();
     if (!report_id || !user_id) return NextResponse.json({ success: false, message: 'report_id and user_id are required.' });
     if (!actions_taken?.trim()) return NextResponse.json({ success: false, message: 'Please describe the actions you took.' });
+    const photoCheck = validatePhotoData(photo_data);
+    if (!photoCheck.ok) return NextResponse.json({ success: false, message: photoCheck.message });
 
     const existing = await sql`SELECT report_id, user_id, status FROM incident_reports WHERE report_id=${report_id}`;
     if (existing.length === 0) return NextResponse.json({ success: false, message: 'Report not found.' });
@@ -91,7 +108,7 @@ export async function PUT(req: NextRequest) {
 
         await sql`
       UPDATE incident_reports
-      SET actions_taken=${actions_taken}, remarks=${remarks || null}, photo_data=${photo_data || null}, status='Submitted', submitted_at=NOW()
+      SET actions_taken=${actions_taken}, remarks=${remarks || null}, photo_data=${photoCheck.value}, status='Submitted', submitted_at=NOW()
       WHERE report_id=${report_id}
     `;
     return NextResponse.json({ success: true, message: 'Report submitted.' });
