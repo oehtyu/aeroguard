@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { validatePassword } from '@/lib/password'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
@@ -847,19 +848,16 @@ useEffect(() => {
     }catch{}
   }
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-  // Alert-critical data (devices + incidents) stays on the 3s poll. Slow-changing data
-  // (equipment, map, reports) refreshes every 15s and the session check every 30s, so the
-  // network tab is no longer full of identical requests while nothing is changing.
+  // Devices, incidents, equipment, map and reports all refresh every 3s (same speed as before,
+  // so admin changes show up on every open tab within ~3s). Only the session check is slower (30s).
   let tick=0
   const r=setInterval(()=>{
     tick++
     loadDevices()
     loadIncidents(incFilterRef.current)
-    if(tick%5===0){
-      loadEquipment()
-      loadMapObjects()
-      loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')
-    }
+    loadEquipment()
+    loadMapObjects()
+    loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')
     if(tick%10===0)syncSession()
   },3000)
   const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
@@ -1030,7 +1028,7 @@ setModal(null);loadUsers()
   async function changePassword(){
     if(!form.current_password){setFormErrors({current_password:'Current password required.'});return}
     if(!form.new_password){setFormErrors({new_password:'New password required.'});return}
-    if(form.new_password.length<8){setFormErrors({new_password:'Minimum 8 characters.'});return}
+    {const pwErr=validatePassword(form.new_password);if(pwErr){setFormErrors({new_password:pwErr});return}}
     if(form.new_password!==form.confirm_password){setFormErrors({confirm_password:'Passwords do not match.'});return}
     setFormErrors({})
     const d=await api('/api/users/set-password','PUT',{user_id:user.user_id,current_password:form.current_password,new_password:form.new_password})
@@ -1925,7 +1923,7 @@ function declineResponse() {
               </div>
               <div style={{padding:22,display:'flex',flexDirection:'column',gap:14}}>
                 <div>{lbl('Current Password')}{input('current_password','••••••••','password')}</div>
-                <div>{lbl('New Password (min 8 chars)')}{input('new_password','••••••••','password')}</div>
+                <div>{lbl('New Password (8+ chars, A-z, 0-9, symbol)')}{input('new_password','••••••••','password')}</div>
                 <div>{lbl('Confirm New Password')}{input('confirm_password','••••••••','password')}</div>
               </div>
               <div style={{padding:'14px 22px',borderTop:'1px solid var(--border)',display:'flex',gap:10,justifyContent:'flex-end'}}>

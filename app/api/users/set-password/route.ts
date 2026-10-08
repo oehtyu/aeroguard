@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { validatePassword } from '@/lib/password';
 import { getSessionUserId, unauthorized } from '@/lib/guard';
 import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
@@ -17,8 +18,8 @@ export async function POST(req: NextRequest) {
   const hit = await rateLimit(`setpw:user:${user_id}`, 10, 15 * 60);
   if (!hit.allowed) return tooMany(hit.retryAfter, 'attempts');
 
-  if (password.length < 8)
-    return NextResponse.json({ success: false, message: 'Password must be at least 8 characters.' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return NextResponse.json({ success: false, message: pwErr });
 
   const rows = await sql`SELECT otp_code, otp_expires_at FROM users WHERE user_id=${user_id}`;
   if (rows.length === 0) return NextResponse.json({ success: false, message: 'User not found.' });
@@ -47,8 +48,8 @@ export async function PUT(req: NextRequest) {
   if (!hit.allowed) return tooMany(hit.retryAfter, 'attempts');
   if (!current_password || !new_password)
     return NextResponse.json({ success: false, message: 'All fields required.' });
-  if (new_password.length < 8)
-    return NextResponse.json({ success: false, message: 'New password must be at least 8 characters.' });
+  const pwErr = validatePassword(new_password);
+  if (pwErr) return NextResponse.json({ success: false, message: pwErr });
 
   const rows = await sql`SELECT user_id FROM users WHERE user_id=${user_id} AND password=${current_password}`;
   if (rows.length === 0) return NextResponse.json({ success: false, message: 'Current password is incorrect.' });

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, Suspense } from 'react'
+import { validatePassword } from '@/lib/password'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 function SetPasswordForm() {
@@ -48,7 +49,7 @@ function SetPasswordForm() {
 
   async function setNewPassword() {
     if (!password) { setError('Enter a password.'); return }
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    const pwErr = validatePassword(password); if (pwErr) { setError(pwErr); return }
     if (password !== confirm) { setError('Passwords do not match.'); return }
     setLoading(true); setError('')
     const d = await fetch('/api/users/set-password', {
@@ -124,7 +125,7 @@ function SetPasswordForm() {
         {step === 'password' && (
           <>
             <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4, color: '#e2e8f0' }}>Set Your Password</div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 24 }}>Choose a strong password (minimum 8 characters).</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 24 }}>Choose a strong password: 8+ characters with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces.</div>
             {usernameFromLink && (
               <>
                 <label style={{ fontSize: '.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Username</label>
