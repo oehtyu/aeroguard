@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { isAdminReq } from '@/lib/guard';
 
 const TYPES = new Set(['ABC', 'CO2', 'Water', 'Foam']);
 const STATUSES = new Set(['Active', 'Maintenance', 'Expired']);
@@ -116,8 +117,7 @@ export async function PUT(req: NextRequest) {
 
     // Map Editor: only the marker position changed (admins only).
     if (body.position_only) {
-      const admin = await sql`SELECT user_type FROM users WHERE user_id=${Number(body.admin_id) || 0}`;
-      if (admin[0]?.user_type !== 'Admin') return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 });
+      if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 });
       const x = Number(body.map_x), y = Number(body.map_y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return NextResponse.json({ success: false, message: 'Invalid position.' }, { status: 400 });
       if (!(await ensureMapColumns())) return NextResponse.json({ success: false, message: 'Database could not store map positions (map_x / map_y columns missing).' }, { status: 500 });

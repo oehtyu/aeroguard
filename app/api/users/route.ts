@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireAdmin, getSessionUserId, unauthorized } from '@/lib/guard';
 
 function validatePhone(phone: string): string | null {
   if (!phone) return null;
@@ -20,7 +21,9 @@ function validateUsername(username: string): string | null {
 }
 
 // ── GET all users ──────────────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const admin = await requireAdmin(req);   // full user list incl. emails = admin only
+  if (admin instanceof NextResponse) return admin;
   const rows = await sql`
     SELECT user_id, username, full_name, user_type, email, phone, is_verified, building
     FROM users ORDER BY user_id ASC
@@ -30,6 +33,8 @@ export async function GET() {
 
 // ── POST create user (admin action — sends OTP to email) ───
 export async function POST(req: NextRequest) {
+  const admin = await requireAdmin(req);
+  if (admin instanceof NextResponse) return admin;
   const { full_name, username, user_type, email, phone, building } = await req.json();
 
   if (!full_name?.trim()) return NextResponse.json({ success: false, message: 'Full name is required.' });
@@ -73,20 +78,20 @@ export async function PUT(req: NextRequest) {
 
   // ── Admin: role change only ──────────────────────────────
   if (mode === 'role') {
-    const { admin_id, user_id, user_type } = body;
-    if (!admin_id || !user_id || !user_type)
-      return NextResponse.json({ success: false, message: 'admin_id, user_id, and user_type required.' });
-    const admin = await sql`SELECT user_type FROM users WHERE user_id=${admin_id}`;
-    if (admin.length === 0 || admin[0].user_type !== 'Admin')
-      return NextResponse.json({ success: false, message: 'Only admins can change roles.' });
+    const admin = await requireAdmin(req);   // admin identity comes from the cookie, not the request body
+    if (admin instanceof NextResponse) return admin;
+    const { user_id, user_type } = body;
+    if (!user_id || !user_type)
+      return NextResponse.json({ success: false, message: 'user_id and user_type required.' });
     await sql`UPDATE users SET user_type=${user_type} WHERE user_id=${user_id}`;
     return NextResponse.json({ success: true, message: 'Role updated.' });
   }
 
   // ── Self: user edits their own profile ───────────────────
   if (mode === 'self') {
-    const { user_id, full_name, username, email, phone } = body;
-    if (!user_id) return NextResponse.json({ success: false, message: 'user_id required.' });
+    const user_id = await getSessionUserId(req);   // you can only edit YOUR OWN profile
+    if (!user_id) return unauthorized();
+    const { full_name, username, email, phone } = body;
     if (!full_name?.trim()) return NextResponse.json({ success: false, message: 'Full name is required.' });
     const uErr = validateUsername(username?.trim() || '');
     if (uErr) return NextResponse.json({ success: false, message: uErr });
@@ -120,6 +125,8 @@ export async function PUT(req: NextRequest) {
 
 // ── DELETE user ────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  const admin = await requireAdmin(req);
+  if (admin instanceof NextResponse) return admin;
   const { user_id } = await req.json();
   if (!user_id) return NextResponse.json({ success: false, message: 'User ID is required.' });
   await sql`DELETE FROM users WHERE user_id=${user_id}`;

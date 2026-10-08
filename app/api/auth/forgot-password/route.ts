@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { randomInt } from 'crypto';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
-  const { username } = await req.json();
+  const body = await req.json().catch(() => ({}));
+  const username = String(body.username ?? '').trim();
   if (!username)
     return NextResponse.json({ success: false, message: 'Please enter your username.' });
+
+  // Keyed on what was typed (not on whether the account exists) so it can't be used to probe usernames.
+  const ipHit = await rateLimit(`forgot:ip:${clientIp(req)}`, 10, 15 * 60);
+  if (!ipHit.allowed) return tooMany(ipHit.retryAfter, 'reset requests');
+  const userHit = await rateLimit(`forgot:user:${username.toLowerCase()}`, 3, 15 * 60);
+  if (!userHit.allowed) return tooMany(userHit.retryAfter, 'reset requests');
 
   const GENERIC = 'If that username exists, a password reset link has been sent to the registered email.';
 
@@ -20,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message: GENERIC });
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
   await sql`UPDATE users SET otp_code=${otp}, otp_expires_at=${expiresAt.toISOString()} WHERE user_id=${acct.user_id}`;
 

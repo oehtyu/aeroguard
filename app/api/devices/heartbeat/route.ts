@@ -64,6 +64,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const server_received_at = new Date().toISOString();
 
+  // Devices have no login cookie. If DEVICE_API_KEY is set on the server, the Pi must send the
+  // same value in an "x-device-key" header. (Left optional so existing Pis keep working until updated.)
+  const deviceKey = process.env.DEVICE_API_KEY;
+  if (deviceKey && req.headers.get('x-device-key') !== deviceKey)
+    return NextResponse.json({ success: false, message: 'Invalid device key.' }, { status: 401 });
+
   try {
     const { device_id, pm25_value, pm10_value, temperature, humidity, threat_level,
             sensor_read_at, pi_sent_at } = await req.json();

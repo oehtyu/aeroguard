@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { randomInt } from 'crypto';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
+import { maskEmail } from '@/lib/mask';
 
 export async function POST(req: NextRequest) {
-  const { username, password } = await req.json();
+  const body = await req.json().catch(() => ({}));
+  // Trim so a stray space from typing/pasting doesn't make valid credentials "invalid".
+  const username = String(body.username ?? '').trim();
+  const password = String(body.password ?? '').trim();
   if (!username || !password)
     return NextResponse.json({ success: false, message: 'Username and password required.' });
+
+  // Rate limit: per IP (generous — campus users share one IP) and per username (strict).
+  const ipHit = await rateLimit(`login:ip:${clientIp(req)}`, 30, 10 * 60);
+  if (!ipHit.allowed) return tooMany(ipHit.retryAfter, 'login attempts');
+  const userHit = await rateLimit(`login:user:${username.toLowerCase()}`, 8, 10 * 60);
+  if (!userHit.allowed) return tooMany(userHit.retryAfter, 'login attempts');
 
   const rows = await sql`
     SELECT user_id, username, full_name, user_type, email, phone
@@ -17,7 +29,11 @@ export async function POST(req: NextRequest) {
   if (!acct.email)
     return NextResponse.json({ success: false, message: 'This account has no email on file. Contact your admin.' });
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // Limit how many login codes can be emailed to one account (stops OTP email spam).
+  const otpHit = await rateLimit(`login-otp:${acct.user_id}`, 3, 10 * 60);
+  if (!otpHit.allowed) return tooMany(otpHit.retryAfter, 'code requests');
+
+  const otp = randomInt(100000, 1000000).toString(); // cryptographically secure (Math.random is not)
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
   await sql`UPDATE users SET login_otp_code=${otp}, login_otp_expires_at=${expiresAt.toISOString()} WHERE user_id=${acct.user_id}`;
 
@@ -68,5 +84,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: `Failed to send email: ${err.message}` });
   }
 
-  return NextResponse.json({ success: true, requiresOtp: true, message: `Code sent to ${acct.email}.`, user_id: acct.user_id });
+  return NextResponse.json({ success: true, requiresOtp: true, message: `Code sent to ${maskEmail(acct.email)}.`, user_id: acct.user_id });
 }

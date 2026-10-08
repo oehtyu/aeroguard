@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { isAdminReq } from '@/lib/guard'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-async function isAdmin(userId: unknown) {
-  if (!userId) return false
-  const rows = await sql`SELECT user_type FROM users WHERE user_id=${Number(userId)}`
-  return rows[0]?.user_type === 'Admin'
-}
 
 // GET — list all saved presets (id, name, created_at only — not the full
 // layout data, to keep the dropdown list lightweight)
@@ -28,7 +24,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const { admin_id, name } = await req.json()
-    if (!(await isAdmin(admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
     if (!String(name || '').trim()) return NextResponse.json({ success: false, message: 'Preset name is required.' })
 
     const current = await sql`
@@ -62,7 +58,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const { admin_id, preset_id } = await req.json()
-    if (!(await isAdmin(admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
 
     const preset = await sql`SELECT data FROM map_presets WHERE preset_id=${Number(preset_id)}`
     if (!preset.length) return NextResponse.json({ success: false, message: 'Preset not found.' })
@@ -106,7 +102,7 @@ await sql`DELETE FROM map_objects`
 export async function DELETE(req: NextRequest) {
   try {
     const { admin_id, preset_id } = await req.json()
-    if (!(await isAdmin(admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
     await sql`DELETE FROM map_presets WHERE preset_id=${Number(preset_id)}`
     return NextResponse.json({ success: true })
   } catch (error: any) {

@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { randomInt } from 'crypto';
+import { requireAdmin } from '@/lib/guard';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 // ── Generate a 6-digit OTP and store it ──────────────────────
 export async function POST(req: NextRequest) {
+  const admin = await requireAdmin(req);          // only admins can trigger activation emails
+  if (admin instanceof NextResponse) return admin;
+
   const { email, user_id } = await req.json();
   if (!email || !user_id)
     return NextResponse.json({ success: false, message: 'Email and user_id required.' });
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const hit = await rateLimit(`setup-email:${user_id}`, 5, 15 * 60);
+  if (!hit.allowed) return tooMany(hit.retryAfter, 'activation emails');
+
+  const otp = randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
   // Store OTP in DB, and grab the username in the same query
@@ -82,9 +91,17 @@ export async function POST(req: NextRequest) {
 
 // ── Verify OTP ───────────────────────────────────────────────
 export async function PUT(req: NextRequest) {
-  const { user_id, otp } = await req.json();
+  const body = await req.json();
+  const user_id = body.user_id;
+  const otp = String(body.otp ?? '').trim();
   if (!user_id || !otp)
     return NextResponse.json({ success: false, message: 'user_id and OTP required.' });
+
+  // Shared with set-password POST so guessing the code can't be split across the two endpoints.
+  const ipHit = await rateLimit(`setpw:ip:${clientIp(req)}`, 30, 15 * 60);
+  if (!ipHit.allowed) return tooMany(ipHit.retryAfter, 'attempts');
+  const hit = await rateLimit(`setpw:user:${user_id}`, 10, 15 * 60);
+  if (!hit.allowed) return tooMany(hit.retryAfter, 'attempts');
 
   const rows = await sql`SELECT otp_code, otp_expires_at FROM users WHERE user_id=${user_id}`;
   if (rows.length === 0) return NextResponse.json({ success: false, message: 'User not found.' });

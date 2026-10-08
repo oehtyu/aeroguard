@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { isAdminReq } from '@/lib/guard'
 import { sameBuilding } from '@/app/components/extinguishers'
 
 export const dynamic = 'force-dynamic'
@@ -9,11 +10,6 @@ const TYPES = new Set(['building', 'room', 'tree_area', 'wall', 'gate', 'safe_zo
 const MAX_X = 1140
 const MAX_Y = 600
 
-async function isAdmin(userId: unknown) {
-  if (!userId) return false
-  const rows = await sql`SELECT user_type FROM users WHERE user_id=${Number(userId)}`
-  return rows[0]?.user_type === 'Admin'
-}
 
 // Devices, extinguishers and users refer to a building by NAME, so a building that holds rooms must
 // have a name no other building uses — otherwise their rooms and locations get mixed together.
@@ -87,7 +83,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json()
-    if (!(await isAdmin(data.admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
     if (!TYPES.has(data.object_type) || !String(data.name || '').trim() || !validBox(data)) {
       return NextResponse.json({ success: false, message: 'Enter a name, valid object type, and an in-map position/size.' }, { status: 400 })
     }
@@ -120,7 +116,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const data = await req.json()
-    if (!(await isAdmin(data.admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
     if (!data.map_object_id || !TYPES.has(data.object_type) || !String(data.name || '').trim() || !validBox(data)) {
       return NextResponse.json({ success: false, message: 'Invalid map object.' }, { status: 400 })
     }
@@ -160,7 +156,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { admin_id, map_object_id } = await req.json()
-    if (!(await isAdmin(admin_id))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
+    if (!(await isAdminReq(req))) return NextResponse.json({ success: false, message: 'Admin access required.' }, { status: 403 })
 
     const children = await sql`SELECT map_object_id FROM map_objects WHERE parent_id=${Number(map_object_id)} LIMIT 1`
     if (children.length) return NextResponse.json({ success: false, message: 'Delete or move this building\'s rooms first.' }, { status: 400 })

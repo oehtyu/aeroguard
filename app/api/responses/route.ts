@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { getSessionUserId, unauthorized } from '@/lib/guard'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -26,7 +27,9 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const device_id = searchParams.get('device_id')
-    const user_id = searchParams.get('user_id')
+    const sid = await getSessionUserId(req)
+    if (!sid) return unauthorized()
+    const user_id = String(sid)
     if (!device_id) return NextResponse.json({ success: false, message: 'device_id is required.' })
 
     const incident = await activeIncident(device_id)
@@ -63,7 +66,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { device_id, user_id, full_name } = await req.json()
+    const { device_id, full_name } = await req.json()
+    const sid = await getSessionUserId(req)
+    if (!sid) return unauthorized()
+    const user_id = sid
     if (!device_id || !user_id) {
       return NextResponse.json({ success: false, message: 'device_id and user_id are required.' })
     }

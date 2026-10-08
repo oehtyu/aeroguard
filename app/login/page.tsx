@@ -16,12 +16,13 @@ export default function LoginPage() {
   const router = useRouter()
 
   async function handleForgotPassword() {
-    if (!forgotUsername) { setError('Please enter your username.'); return }
+    const cleanForgot = forgotUsername.trim()
+    if (!cleanForgot) { setError('Please enter your username.'); return }
     setLoading(true); setError('')
     try {
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: forgotUsername })
+        body: JSON.stringify({ username: cleanForgot })
       })
       const data = await res.json()
       setLoading(false)
@@ -34,12 +35,16 @@ export default function LoginPage() {
   }
 
   async function handleLogin() {
-    if (!username || !password) { setError('Please enter both username and password.'); return }
+    // Trim so accidental spaces (typing or pasting) don't turn valid credentials into "invalid" ones.
+    const cleanUser = username.trim()
+    const cleanPass = password.trim()
+    if (!cleanUser || !cleanPass) { setError('Please enter both username and password.'); return }
+    setUsername(cleanUser); setPassword(cleanPass)
     setLoading(true); setError('')
     try {
       const res = await fetch('/api/auth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username: cleanUser, password: cleanPass })
       })
       const data = await res.json()
       if (!data.success) { setError(data.message); setLoading(false); return }
@@ -54,16 +59,17 @@ export default function LoginPage() {
   }
 
   async function handleVerify() {
-    if (!otp) { setError('Enter the code sent to your email.'); return }
+    const cleanOtp = otp.trim()
+    if (!cleanOtp) { setError('Enter the code sent to your email.'); return }
     setLoading(true); setError('')
     try {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, otp })
+        body: JSON.stringify({ user_id: userId, otp: cleanOtp })
       })
       const data = await res.json()
       if (!data.success) { setError(data.message); setLoading(false); return }
-      localStorage.setItem('ag_user', JSON.stringify(data.user))
+      // The session is now an httpOnly cookie set by the server — nothing is stored in localStorage.
       router.push('/dashboard')
     } catch {
       setError('Cannot reach server.')
@@ -185,7 +191,7 @@ export default function LoginPage() {
             {error && <div style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: 'var(--red)', borderRadius: 8, padding: '10px 14px', fontSize: '.8rem', marginBottom: 16 }}>⚠️ &nbsp;{error}</div>}
 
             <label style={{ fontSize: '.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>6-digit code</label>
-            <input value={otp} onChange={e => setOtp(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVerify()}
+            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ''))} onKeyDown={e => e.key === 'Enter' && handleVerify()}
               placeholder="000000" maxLength={6}
               style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 14px', color: 'var(--text)', fontSize: '1.2rem', letterSpacing: 6, textAlign: 'center', fontFamily: 'var(--mono)', outline: 'none', marginBottom: 22 }} />
 

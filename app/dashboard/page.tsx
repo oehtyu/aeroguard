@@ -9,7 +9,6 @@ import { nearestExtinguishers } from '../components/extinguishers'
 import { planEvacuation } from '../components/evacuation'
 import GuidanceCard from '../components/Guidance'
 
-const SESSION_KEY     = 'ag_user'
 
 const THREAT_COLOR: Record<string,string> = {Gray:'#94a3b8',Yellow:'#eab308',Orange:'#f97316',Red:'#ef4444'}
 
@@ -806,28 +805,39 @@ useEffect(() => {
 
   const isAdmin=user?.user_type==='Admin'
 
-       useEffect(()=>{
-  const stored=localStorage.getItem(SESSION_KEY)
-  if(!stored){router.push('/login');return}
-  const sessionUser=JSON.parse(stored)
+  useEffect(()=>{
+  let cancelled=false
+  let cleanup=()=>{}
+  ;(async()=>{
+  // The session is an httpOnly cookie (JS can't read it), so ask the server who is signed in.
+  let sessionUser:any
+  try{
+    const res=await fetch('/api/users/me',{cache:'no-store'})
+    const d=await res.json()
+    if(!d.success||!d.user){router.push('/login');return}
+    sessionUser=d.user
+  }catch{router.push('/login');return}
+  if(cancelled)return
+  userRef.current=sessionUser
   setUser(sessionUser)
-    loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
+  loadDevices();loadIncidents();loadMapObjects();loadEquipment();loadReports(sessionUser.user_id,sessionUser.user_type==='Admin')
 
-  // Pick up changes an admin makes to THIS account (role, name, phone...) within a few
-  // seconds instead of only at the next login. The role always comes from the database.
+  // Pick up changes an admin makes to THIS account (role, name, phone...) without a re-login.
+  // The role always comes from the database.
   const ADMIN_VIEWS=['users','incidents','devices','equipment']
   const syncSession=async()=>{
     try{
       const cur=userRef.current||sessionUser
-      const res=await fetch(`/api/users/me?user_id=${cur.user_id}`,{cache:'no-store'})
+      const res=await fetch('/api/users/me',{cache:'no-store'})
+      if(res.status===401){router.push('/login');return}   // cookie expired or account deleted
       const d=await res.json()
-      if(d.deleted){localStorage.removeItem(SESSION_KEY);router.push('/login');return}
       if(!d.success||!d.user)return
       const fresh=d.user
+      // A different account signed in from another tab (the cookie is shared) -> reload as that account.
+      if(fresh.user_id!==cur.user_id){window.location.reload();return}
       const keys=['user_type','full_name','username','email','phone','building']
       if(!keys.some(k=>(cur[k]??'')!==(fresh[k]??'')))return
       const merged={...cur,...fresh}
-      localStorage.setItem(SESSION_KEY,JSON.stringify(merged))
       userRef.current=merged
       setUser(merged)
       if(fresh.user_type!==cur.user_type){
@@ -836,32 +846,31 @@ useEffect(() => {
       }
     }catch{}
   }
-  syncSession()
   const t=setInterval(()=>setClock(new Date().toLocaleTimeString('en-PH')),1000)
-    const r = setInterval(() => {
-  loadDevices()
-  loadIncidents(incFilterRef.current)
-  loadEquipment()
-  syncSession()
-  loadReports(sessionUser.user_id, (userRef.current||sessionUser).user_type === 'Admin')
-
-  loadMapObjects()
-}, 3000)
-    const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
-    const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
-  // Keep every open tab in sync with the session actually stored in this browser.
-  // If a different account logs in (or logs out) in another tab, this tab reloads
-  // so it always reflects the one true active session instead of drifting stale.
-  const onStorage=(e:StorageEvent)=>{
-    if(e.key===SESSION_KEY){window.location.reload()}
-  }
+  // Alert-critical data (devices + incidents) stays on the 3s poll. Slow-changing data
+  // (equipment, map, reports) refreshes every 15s and the session check every 30s, so the
+  // network tab is no longer full of identical requests while nothing is changing.
+  let tick=0
+  const r=setInterval(()=>{
+    tick++
+    loadDevices()
+    loadIncidents(incFilterRef.current)
+    if(tick%5===0){
+      loadEquipment()
+      loadMapObjects()
+      loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')
+    }
+    if(tick%10===0)syncSession()
+  },3000)
+  const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
+  const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
   document.addEventListener('visibilitychange',onVisible)
-  window.addEventListener('storage',onStorage)
-        return()=>{
+  cleanup=()=>{
     clearInterval(t);clearInterval(r);clearInterval(rr)
     document.removeEventListener('visibilitychange',onVisible)
-    window.removeEventListener('storage',onStorage)
   }
+  })()
+  return()=>{cancelled=true;cleanup()}
   },[])
   // The browser tells us the instant it drops/regains a connection — no need to
   // wait out 3 failed polls for that case. Reconnecting refreshes everything
@@ -882,6 +891,7 @@ useEffect(() => {
   const timeoutId=setTimeout(()=>controller.abort(),10000)
   try{
     const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:controller.signal})
+    if(res.status===401){router.push('/login');return {success:false,message:'Session expired. Please sign in again.'}}
     const data=await res.json()
     consecutiveFailRef.current=0
     setConnLost(false)
@@ -946,9 +956,9 @@ useEffect(() => {
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
-    localStorage.removeItem(SESSION_KEY);
     if(auto)showToast('info','Session Expired','Logged out due to inactivity.')
-    router.push('/login')
+    // Ask the server to clear the httpOnly cookie (JS can't delete it by itself).
+    fetch('/api/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>router.push('/login'))
   }
 
   // ── OCCUPANCY: check if a room already has a device ──────────
@@ -1011,7 +1021,7 @@ setModal(null);loadUsers()
     const d=await api('/api/users','PUT',{mode:'self',user_id:user.user_id,full_name:form.full_name,username:form.username,email:form.email||'',phone:form.phone||''})
     if(!d.success){showToast('error','Error',d.message);return}
     const updated={...user,...d.user}
-    localStorage.setItem(SESSION_KEY,JSON.stringify(updated))
+    userRef.current=updated
     setUser(updated)
     showToast('success','Profile Updated','Your profile has been updated.')
     setModal(null);loadUsers()

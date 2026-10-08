@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { getSessionUserId, unauthorized } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -19,7 +20,10 @@ export const revalidate = 0;
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const user_id = searchParams.get('user_id');
+    // Identity from the session cookie — the ?user_id= in the URL is ignored.
+    const sessionId = await getSessionUserId(req);
+    if (!sessionId) return unauthorized();
+    const user_id = String(sessionId);
     const all = searchParams.get('all');
     const report_id = searchParams.get('report_id');
 
@@ -73,7 +77,10 @@ export async function GET(req: NextRequest) {
 // further edits are possible (matches "no further actions until then").
 export async function PUT(req: NextRequest) {
   try {
-        const { report_id, user_id, actions_taken, remarks, photo_data } = await req.json();
+        const { report_id, actions_taken, remarks, photo_data } = await req.json();
+    const sessionId = await getSessionUserId(req);   // report owner = the signed-in user, not whatever the body says
+    if (!sessionId) return unauthorized();
+    const user_id = String(sessionId);
     if (!report_id || !user_id) return NextResponse.json({ success: false, message: 'report_id and user_id are required.' });
     if (!actions_taken?.trim()) return NextResponse.json({ success: false, message: 'Please describe the actions you took.' });
 
