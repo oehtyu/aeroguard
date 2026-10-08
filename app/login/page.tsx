@@ -70,7 +70,7 @@ export default function LoginPage() {
       const data = await res.json()
       if (!data.success) { setError(data.message); setLoading(false); return }
       // The session is now an httpOnly cookie set by the server — nothing is stored in localStorage.
-      router.push('/dashboard')
+      router.replace('/dashboard')
     } catch {
       setError('Cannot reach server.')
       setLoading(false)

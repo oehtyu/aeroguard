@@ -5,9 +5,9 @@ import MapLegend from './MapLegend'
 
 // Self-contained help modal. Triggered from a "?" button in the top bar. Written for two
 // audiences: any signed-in user (Dashboard / Campus Map / Incident Reporting), and admins
-// (Map Editor / Devices / Incident Log / User Accounts / Extinguishers).
+// (Devices / Incident Log / User Accounts / Extinguishers).
 
-type SectionId = 'start' | 'map' | 'alerts' | 'editor' | 'admin'
+type SectionId = 'start' | 'map' | 'alerts' | 'admin'
 
 export default function HelpGuide({ isAdmin, onClose }: { isAdmin: boolean; onClose: () => void }) {
   const sections: { id: SectionId; label: string; icon: string }[] = [
@@ -15,7 +15,6 @@ export default function HelpGuide({ isAdmin, onClose }: { isAdmin: boolean; onCl
     { id: 'map', label: 'Reading the map', icon: '🗺️' },
     { id: 'alerts', label: 'Alerts & evacuation', icon: '🚨' },
     ...(isAdmin ? ([
-      { id: 'editor', label: 'Editing the map', icon: '✏️' },
       { id: 'admin', label: 'Admin tools', icon: '🛠️' },
     ] as const) : []),
   ]
@@ -48,7 +47,6 @@ export default function HelpGuide({ isAdmin, onClose }: { isAdmin: boolean; onCl
             {section === 'start' && <GettingStarted isAdmin={isAdmin} />}
             {section === 'map' && <ReadingMap />}
             {section === 'alerts' && <Alerts />}
-            {section === 'editor' && <Editing />}
             {section === 'admin' && <AdminTools />}
           </div>
         </div>
@@ -78,7 +76,7 @@ function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
       <H>What each page is for</H>
       <P>The sidebar is grouped into two sections.</P>
       <Step n={1}><strong>Monitor</strong> — Dashboard (live status and any active alert), Campus Map (where every sensor, extinguisher, and route sits), and Incident Reporting (your own responder reports).</Step>
-      {isAdmin && <Step n={2}><strong>Manage</strong> — admin-only: Map Editor, Incident Log, Devices, User Accounts, Extinguishers. These have a 🔒 for non-admins.</Step>}
+      {isAdmin && <Step n={2}><strong>Manage</strong> — admin-only: User Accounts, Incident Log, Devices, Extinguishers. These have a 🔒 for non-admins.</Step>}
       <Step n={isAdmin ? 3 : 2}>Click <strong>❓ Help</strong> in the top bar any time you need this guide again.</Step>
       <P>Tip: switch between light and dark mode with the {'\u2600\ufe0f/\ud83c\udf19'} button next to Help — your choice is remembered.</P>
     </>
@@ -89,9 +87,12 @@ function ReadingMap() {
   return (
     <>
       <H>Reading the campus map</H>
-      <P>The map is a scale layout of campus: colored blocks are buildings and rooms, and everything else (walls, gates, trees, extinguishers) is drawn on top. Hover any shape to see its details.</P>
-      <MapLegend variant="view" />
-      <P style={{ marginTop: 12 }}>The legend above is also pinned next to the map itself, so you don't need to reopen this guide while looking at it.</P>
+      <P>The map is a scale layout of campus: colored blocks are buildings and rooms, and everything else (walls, gates, trees, extinguishers) is drawn on top. Hover or tap a sensor 📡 or extinguisher 🧯 to see its details.</P>
+      <Step n={1}>Find your building. Medina Lacson, COAS and CAHS are the three with labeled rooms and sensors.</Step>
+      <Step n={2}>Find the <strong>green dashed line</strong> leaving your building. It always shows the way from the building's <strong>EXIT</strong> door to its assembly area — you can learn it before an emergency.</Step>
+      <Step n={3}>The line stops at the edge of the assembly area (Zone 2 or Zone 3). You do not need to walk to the middle — once you are inside the dashed green box, you have arrived.</Step>
+      <MapLegend />
+      <P style={{ marginTop: 12 }}>The key under the map shows the same symbols, so you don't need to reopen this guide while looking at it.</P>
     </>
   )
 }
@@ -102,23 +103,10 @@ function Alerts() {
       <H>Alerts and evacuation</H>
       <Step n={1}><strong>🟠 Orange</strong> — a possible small fire was detected. Stay alert; responders are asked to check it.</Step>
       <Step n={2}><strong>🔴 Red</strong> — critical. Evacuate immediately to your assembly area.</Step>
-      <Step n={3}>When an alert is active, a card appears with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you tapped "I can respond or assist").</Step>
-      <Step n={4}>The card lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
-      <Step n={5}>On the map, a dashed red line shows the walking route to your assembly area, and the recommended extinguishers pulse green.</Step>
-    </>
-  )
-}
-
-function Editing() {
-  return (
-    <>
-      <H>Editing the map</H>
-      <Step n={1}>Pick an item type on the right (Building, Room, Wall, Gate, Tree, Assembly Area), then <strong>+ Add to map</strong>. New rooms need a building picked first — that building pulses yellow so you can see exactly where it's going.</Step>
-      <Step n={2}>Drag any shape to move it. Click it to select it, then drag the blue corner handle to resize.</Step>
-      <Step n={3}>Drag each 🧯 extinguisher onto its exact real-world spot — a dashed outline means it hasn't been placed yet. This position is what the evacuation guidance and "nearest extinguisher" list use.</Step>
-      <Step n={4}>An Assembly Area's flag (🚩) is what evacuees are routed to — drag the flag separately from the zone's rectangle.</Step>
-      <Step n={5}>Give every building a unique name — if two share a name, devices and extinguishers can't be told apart. The sidebar warns you if this happens.</Step>
-      <MapLegend variant="editor" />
+      <Step n={3}>When an alert is active, a card appears at the top of the page with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you tapped "I can respond or assist").</Step>
+      <Step n={4}>The Evacuating tab starts with <strong>🧭 Your way out</strong>: short directions from the room that is alerting to the assembly area, followed by the general safety steps.</Step>
+      <Step n={5}>The card also lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
+      <Step n={6}>On the Campus Map, the <strong>red line</strong> shows the walk from the alerting room, out the building's EXIT door, to the assembly area. That assembly area glows green, and the recommended extinguishers pulse green.</Step>
     </>
   )
 }

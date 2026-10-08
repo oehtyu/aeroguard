@@ -3,10 +3,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscribe from '../components/PushSubscribe'
 import { createPortal } from 'react-dom'
-import { MapObject, findNearestSafeZone } from '../components/MapEditor'
+import type { MapObject } from '../components/mapTypes'
 import HelpGuide from '../components/HelpGuide'
 import { nearestExtinguishers } from '../components/extinguishers'
-import { planEvacuation } from '../components/evacuation'
+import { getEvacRoute, EXIT_DOORS, ZONE2, ZONE3 } from '../components/campusRoutes'
 import GuidanceCard from '../components/Guidance'
 
 const SESSION_KEY     = 'ag_user'
@@ -95,37 +95,10 @@ const GATES = [
   { id:'gate3', label:'GATE 3', x:426,  y:0,   w:48, h:20 },
 ]
 
-// ── EVACUATION ROUTES ────────────────────────────────────────
-// CAHS → gap above Medina → Gate 3.
-// Medina/COAS → open strip below quadrangle → Gate 2.
-// NEW: Medina's back (north/2F side) → same upper corridor → Gate 3,
-// as a second reference route out of Medina Lacson.
-const EVAC_ROUTES = [
-  { id:'cahs-to-gate3',   points:'622,74 450,74 450,20', building:'CAHS Building',
-    steps:['Exit the room into the main corridor.','Proceed toward the building\'s west end.','Exit onto the open walkway.','Proceed to Gate 3.'] },
-  { id:'medina-to-gate3', points:'480,152 480,130 450,130 450,20', building:'Medina Lacson Building',
-    steps:['Exit the room into the corridor.','Head to the building\'s north side.','Cross the upper walkway.','Proceed to Gate 3.'] },
-  { id:'medina-to-gate2', points:'405,230 405,354 561,354 561,544', building:'Medina Lacson Building',
-    steps:['Exit the room into the corridor.','Head to the building\'s south exit.','Cross the open quadrangle strip.','Proceed to Gate 2.'] },
-  { id:'coas-to-gate2',   points:'166,400 561,400 561,544', building:'COAS Building',
-    steps:['Exit the room into the corridor.','Exit the building heading east.','Cross the open strip below the quadrangle.','Proceed to Gate 2.'] },
-]
-
-const BUILDING_EVAC_ROUTE: Record<string,string> = {
-  'Medina Lacson Building': 'medina-to-gate2',
-  'COAS Building': 'coas-to-gate2',
-  'CAHS Building': 'cahs-to-gate3',
-}
-const GROUND_FLOOR: Record<string,string> = {
-  'Medina Lacson Building': '1F', 'COAS Building': '1F', 'CAHS Building': '1F',
-}
-
 // ── STATIC AREAS ─────────────────────────────────────────────
 type AreaStyle = 'gray' | 'tree' | 'building' | 'wall' | 'open'
-// BPSU DRRM's two real assembly/open-ground points — reused below as both a labeled area on
-// the map and (further down) as the hardcoded safe_zone targets the evacuation routes aim for.
-const ZONE2 = { x:246, y:253, w:300, h:79  } // the quadrangle — serves Medina Lacson & COAS
-const ZONE3 = { x:834, y:150, w:174, h:88  } // open green area beside CAHS/Library — serves CAHS
+// BPSU DRRM's two real assembly areas (ZONE2 / ZONE3) live in components/campusRoutes.ts, next to
+// the hand-drawn evacuation routes that lead to them.
 const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; style:AreaStyle }[] = [
   // Walls
   { x:0,   y:0,   w:405, h:15, label:'', style:'wall' },
@@ -168,11 +141,6 @@ const STATIC_AREAS: { x:number; y:number; w:number; h:number; label:string; styl
   { x:651, y:470, w:356, h:68,  label:'Trees / Green Area',         style:'tree' },
 ]
 const AREA_FILL: Record<AreaStyle,string> = { gray:'#2a2f3a', tree:'#14532d', building:'#1a2438', wall:'#475569', open:'#141c2b' }
-const BUILDING_GATE: Record<string,string> = {
-  'Medina Lacson Building': 'gate2',
-  'COAS Building': 'gate2',
-  'CAHS Building': 'gate3',
-}
 
 // ── BUILDING / ROOM OPTIONS ───────────────────────────────────
 const BUILDINGS_LIST = ['Medina Lacson Building','COAS Building','CAHS Building']
@@ -220,9 +188,8 @@ function evacRoom(buildingName: string, floor: string | undefined, room: string)
   if (!b) return null
   return EVAC_OBJECTS.find(o => o.object_type === 'room' && o.parent_id === b.map_object_id && o.name === room && (!floor || !o.floor || o.floor === floor)) || null
 }
-// The three buildings' own reference routes to their zone, computed once — these are the
-// permanent green dashed lines always shown on the map, regardless of any active alert.
-const REFERENCE_ROUTES = BUILDINGS.map(b => ({ building: b.name, plan: planEvacuation(evacBuilding(b.name), null, EVAC_OBJECTS) }))
+// Each building's standard route to its assembly area — the permanent green dashed lines on the map.
+const REFERENCE_ROUTES = BUILDINGS.map(b => ({ building: b.name, route: getEvacRoute(b.name) }))
 const svgPoints = (pts: { cx:number; cy:number }[]) => pts.map(p => `${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')
 
 const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:string }[]> = {
@@ -635,9 +602,10 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
   const activeEvacDevice=activeEvacInc&&devices.find(dv=>dv.device_id===activeEvacInc.device_id)
   const activeBuildingObj=activeEvacDevice?evacBuilding(activeEvacDevice.building):null
   const activeRoomObj=activeEvacDevice&&activeBuildingObj?evacRoom(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room):null
-  // Room-specific when we know the exact room (so the line starts at the right spot even on
-  // a different floor), falling back to the building-level reference route otherwise.
-  const activePlan=activeBuildingObj?(activeRoomObj?planEvacuation(activeBuildingObj,activeRoomObj,EVAC_OBJECTS):REFERENCE_ROUTES.find(r=>r.building===activeBuildingObj!.name)?.plan)??null:null
+  // Room-specific route when we know the exact room (so the line starts at the right door/hallway,
+  // even on another floor), otherwise the building's standard route.
+  const activePos=activeEvacDevice?getRoomPos(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room):null
+  const activePlan=activeEvacDevice?getEvacRoute(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room,activePos):null
   // The 3 nearest AVAILABLE extinguishers to the alert — these pulse green below, same ones
   // listed in the guidance card.
   const activeNearest=activeEvacDevice?nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment}):null
@@ -679,38 +647,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           </g>
         ))}
 
-        {/* Planned evacuation routes — a fixed grid-pathfinder plans each one so it walks around
-            buildings and walls on its way to the correct zone (Zone 2 for Medina Lacson/COAS,
-            Zone 3 for CAHS), never through them. Green = always-visible reference route for each
-            building; red = the live route for whichever room is actively alerting right now. */}
-        {REFERENCE_ROUTES.map(r=>{
-          if(!r.plan) return null
-          const isActive=activePlan&&activeBuildingObj?.name===r.building
-          if(isActive) return null // drawn separately below, on top, from the room-specific plan
-          return (
-            <g key={r.building}>
-              <polyline points={svgPoints(r.plan.points)} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18}/>
-              <polyline points={svgPoints(r.plan.points)} fill="none" stroke="#22c55e" strokeWidth={2.5}
-                        strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)"/>
-            </g>
-          )
-        })}
-        {activePlan&&(
-          <g>
-            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={7} opacity={0.25}/>
-            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={4}
-                      opacity={1} markerEnd="url(#evacArrowRed)"/>
-          </g>
-        )}
-        <defs>
-          <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M1 1L9 5L1 9Z" fill="#22c55e"/>
-          </marker>
-          <marker id="evacArrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M1 1L9 5L1 9Z" fill="#ef4444"/>
-          </marker>
-        </defs>
-
         {/* Gates */}
         {GATES.map(g=>(
           <g key={g.id}>
@@ -739,6 +675,57 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           </g>
         ))}
        
+        {/* During an alert, the assembly area everyone is heading to glows so it is easy to spot */}
+        {activePlan&&(()=>{
+          const z=activePlan.zoneId==='zone2'?ZONE2:ZONE3
+          return (
+            <rect x={z.x} y={z.y} width={z.w} height={z.h} rx={3} fill="rgba(34,197,94,0.12)" stroke="#22c55e" strokeWidth={2.5} style={{pointerEvents:'none'}}>
+              <animate attributeName="opacity" values="1;0.35;1" dur="1.6s" repeatCount="indefinite"/>
+            </rect>
+          )
+        })()}
+
+        {/* Evacuation routes (hand-drawn, see components/campusRoutes.ts). Every route is room → hallway →
+            exit door → walkway → EDGE of the assembly area, using only straight horizontal/vertical legs,
+            so it never cuts through a building or runs across the assembly area.
+            Green = standard route for each building (always shown); red = the live route for the room
+            that is alerting right now. */}
+        {REFERENCE_ROUTES.map(r=>{
+          if(!r.route) return null
+          const isActive=activePlan&&activeEvacDevice?.building===r.building
+          if(isActive) return null // drawn separately below, on top, from the room-specific route
+          return (
+            <g key={r.building}>
+              <polyline points={svgPoints(r.route.points)} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18} strokeLinejoin="round" strokeLinecap="round"/>
+              <polyline points={svgPoints(r.route.points)} fill="none" stroke="#22c55e" strokeWidth={2.5}
+                        strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)" strokeLinejoin="round"/>
+            </g>
+          )
+        })}
+        {activePlan&&(
+          <g>
+            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={8} opacity={0.25} strokeLinejoin="round" strokeLinecap="round"/>
+            <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={4}
+                      opacity={1} markerEnd="url(#evacArrowRed)" strokeLinejoin="round"/>
+          </g>
+        )}
+        <defs>
+          <marker id="evacArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M1 1L9 5L1 9Z" fill="#22c55e"/>
+          </marker>
+          <marker id="evacArrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M1 1L9 5L1 9Z" fill="#ef4444"/>
+          </marker>
+        </defs>
+
+        {/* Building exit doors — where every evacuation route leaves the building */}
+        {EXIT_DOORS.map((d,i)=>(
+          <g key={`exit-${i}`} style={{pointerEvents:'none'}}>
+            <rect x={d.x-9} y={d.y-3} width={18} height={6} rx={2} fill="#22c55e" stroke="#0d1421" strokeWidth={1}/>
+            <text x={d.x} y={d.y+2} textAnchor="middle" fontSize={4.5} fill="#04210f" fontFamily="monospace" fontWeight="bold">{d.label}</text>
+          </g>
+        ))}
+
         {/* Fire extinguishers — rendered from live equipment data */}
         {equipment.map(e=>{
           const pos=getExtPos(e.building, e.floor, e.location_description)
@@ -817,8 +804,10 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
         ))}
         <div style={{display:'flex',alignItems:'center',gap:5}}><span>🧯</span> Fire Extinguisher</div>
         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:'50%',border:'2px solid #22c55e'}}/> Nearest extinguisher (active alert)</div>
-        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.1)',border:'1px solid #22c55e'}}/> 🚩 Zone Assembly Area</div>
-        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:2,background:'#22c55e'}}/> Evacuation route</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.1)',border:'1px solid #22c55e'}}/> 🚩 Assembly Area (Zone 2 / Zone 3)</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:0,borderTop:'2px dashed #22c55e'}}/> Standard evacuation route (building → assembly area)</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#ef4444'}}/> Live route during an alert</div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:6,borderRadius:2,background:'#22c55e'}}/> EXIT door</div>
       </div>
     </div>
   )
@@ -962,9 +951,9 @@ useEffect(() => {
   try{
     const meRes=await fetch('/api/users/me',{cache:'no-store',credentials:'same-origin'})
     const meData=await meRes.json()
-    if(!meData.success||!meData.user){router.push('/login');return}
+    if(!meData.success||!meData.user){window.location.replace('/login');return}
     sessionUser=meData.user
-  }catch{router.push('/login');return}
+  }catch{window.location.replace('/login');return}
   if(cancelled)return
   userRef.current=sessionUser
   setUser(sessionUser)
@@ -978,7 +967,7 @@ useEffect(() => {
       const cur=userRef.current||sessionUser
       const res=await fetch('/api/users/me',{cache:'no-store',credentials:'same-origin'})
       const d=await res.json()
-      if(d.deleted||res.status===401){router.push('/login');return}
+      if(d.deleted||res.status===401){window.location.replace('/login');return}
       if(!d.success||!d.user)return
       const fresh=d.user
       const keys=['user_type','full_name','username','email','phone','building']
@@ -1004,10 +993,15 @@ useEffect(() => {
 }, 3000)
     const rr=setInterval(()=>loadResponses(sessionUser.user_id),2000)
     const onVisible=()=>{if(document.visibilityState==='visible'){syncSession();loadDevices();loadIncidents(incFilterRef.current);loadResponses(sessionUser.user_id);loadReports(sessionUser.user_id,(userRef.current||sessionUser).user_type==='Admin')}}
+  // Back/Forward can restore this page from the browser's cache without asking the server.
+  // If that happens, reload so the server re-checks the session (no cookie -> sent to login).
+  const onPageShow=(e:PageTransitionEvent)=>{if(e.persisted)window.location.reload()}
   document.addEventListener('visibilitychange',onVisible)
+  window.addEventListener('pageshow',onPageShow)
   cleanup=()=>{
     clearInterval(t);clearInterval(r);clearInterval(rr)
     document.removeEventListener('visibilitychange',onVisible)
+    window.removeEventListener('pageshow',onPageShow)
   }
   })()
   return()=>{cancelled=true;cleanup?.()}
@@ -1085,7 +1079,8 @@ useEffect(() => {
   }
   function guardedView(v:string){if(!isAdmin){setModal('access');return}switchView(v)}
   function doLogout(auto=false){
-    fetch('/api/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>router.push('/login'))
+    // replace() (not push) so the dashboard is removed from history; Back can't return to it.
+    fetch('/api/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>window.location.replace('/login'))
     if(auto)showToast('info','Session Expired','Logged out due to inactivity.')
   }
 
@@ -1340,13 +1335,8 @@ function declineResponse() {
 
     const activeBuildingObj=activeEvacDevice?evacBuilding(activeEvacDevice.building):null
   const activeRoomObj=activeEvacDevice&&activeBuildingObj?evacRoom(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room):null
-  // Same planner the map uses, so the guidance names the assembly area the drawn route actually reaches.
-  const activeSafeZone=activeBuildingObj?(planEvacuation(activeBuildingObj,activeRoomObj,EVAC_OBJECTS)?.safeZone||findNearestSafeZone(activeBuildingObj,EVAC_OBJECTS)):null
-  const activeSteps=activeSafeZone&&activeEvacDevice?[
-    'Proceed to the nearest exit.',
-    `Head to the ${activeSafeZone.name} assembly area.`,
-    'Wait for further instructions from Security/DRRM personnel.',
-  ]:null
+  // Same hand-drawn route the map draws, so the guidance names the assembly area and the exit the red line really uses.
+  const activeRoute=activeEvacDevice?getEvacRoute(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room,getRoomPos(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room)):null
 
   const navItems=[
      {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
@@ -1579,7 +1569,8 @@ function declineResponse() {
               location={activeEvacInc.location}
               building={activeEvacDevice.building}
               floor={activeEvacDevice.floor}
-              assemblyArea={activeSafeZone?.name||null}
+              assemblyArea={activeRoute?.zoneName||null}
+              routeSteps={activeRoute?.steps}
               nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment})}
               isResponder={myResponses.has(activeEvacDevice.device_id)}
               onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}

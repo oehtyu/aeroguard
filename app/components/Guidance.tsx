@@ -21,6 +21,7 @@ export type GuidanceProps = {
   building?: string
   floor?: string
   assemblyArea?: string | null
+  routeSteps?: string[]       // turn-by-turn walk to the assembly area (same route drawn on the Campus Map)
   nearest: NearestResult      // the 3 nearest AVAILABLE extinguishers to the alerting room (+ unavailable ones)
   isResponder: boolean        // this user accepted the response request
   onRespond?: () => void      // opens the "Can you respond?" prompt
@@ -116,14 +117,27 @@ function ExtinguisherPanel({ nearest, building, level }: { nearest: NearestResul
   )
 }
 
-export default function GuidanceCard({ level, location, building, floor, assemblyArea, nearest, isResponder, onRespond }: GuidanceProps) {
+// "Which way do I walk?" — the same route the Campus Map draws as a red line.
+function RouteBox({ steps, color, assemblyArea }: { steps: string[]; color: string; assemblyArea?: string | null }) {
+  return (
+    <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: `${color}10`, border: `1px solid ${color}40` }}>
+      <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color, textTransform: 'uppercase', marginBottom: 8 }}>
+        🧭 Your way out{assemblyArea ? ` → ${assemblyArea}` : ''}
+      </div>
+      <Steps items={steps.map(t => ({ t }))} color={color} />
+      <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>The same route is drawn as a red line on the Campus Map.</div>
+    </div>
+  )
+}
+
+export default function GuidanceCard({ level, location, building, floor, assemblyArea, routeSteps, nearest, isResponder, onRespond }: GuidanceProps) {
   const isRed = level === 'Red'
   const color = isRed ? '#ef4444' : '#f97316'
   const [tab, setTab] = useState<'evacuate' | 'respond'>(isResponder ? 'respond' : 'evacuate')
   const [open, setOpen] = useState(true)
   useEffect(() => { if (isResponder) setTab('respond') }, [isResponder])
 
-  const gather = assemblyArea ? `the ${assemblyArea} assembly area` : 'the nearest assembly area / open ground away from the building'
+  const gather = assemblyArea ? `the ${assemblyArea.replace(/\s*assembly area$/i, '')} assembly area` : 'the nearest assembly area / open ground away from the building'
 
   const evacSteps: { t: string; d?: string }[] = isRed ? [
     { t: 'Leave now', d: 'walk briskly, do not run, do not push. Leave your belongings.' },
@@ -173,6 +187,7 @@ export default function GuidanceCard({ level, location, building, floor, assembl
 
           {tab === 'evacuate' && (
             <>
+              {routeSteps && routeSteps.length > 0 && <RouteBox steps={routeSteps} color={color} assemblyArea={assemblyArea} />}
               <Steps items={evacSteps} color={color} />
               {isRed && (
                 <Note color={color}>

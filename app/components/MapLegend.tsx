@@ -2,9 +2,8 @@
 
 import { useState } from 'react'
 
-// A short reference card for the 2D campus map. The same component is used on the
-// live Campus Map (variant="view") and in Map Editor (variant="editor"), since panel
-// feedback was that new users (admins included) find the map hard to read on its own.
+// A short reference card for the 2D campus map, shown in the Help guide. Panel feedback was that
+// new users (admins included) find the map hard to read on its own.
 
 type Row = { swatch: React.ReactNode; label: string; note?: string }
 
@@ -21,7 +20,7 @@ function Swatch({ color, shape = 'square', dashed = false }: { color: string; sh
   )
 }
 
-export default function MapLegend({ variant = 'view' }: { variant?: 'view' | 'editor' }) {
+export default function MapLegend() {
   const [open, setOpen] = useState(true)
 
   const placeRows: Row[] = [
@@ -30,7 +29,8 @@ export default function MapLegend({ variant = 'view' }: { variant?: 'view' | 'ed
     { swatch: <Swatch color="#60a5fa" shape="line" />, label: 'Wall' },
     { swatch: <Swatch color="#22c55e" />, label: 'Gate' },
     { swatch: <Swatch color="#16a34a" />, label: 'Trees / green area' },
-    { swatch: <Swatch color="#22c55e" dashed />, label: 'Assembly Area (Zone)', note: '🚩 = exact meeting flag' },
+    { swatch: <Swatch color="#22c55e" dashed />, label: 'Assembly Area (Zone 2 / Zone 3)', note: 'where everyone gathers' },
+    { swatch: <Swatch color="#22c55e" />, label: 'EXIT door', note: 'where routes leave a building' },
   ]
 
   const extRows: Row[] = [
@@ -40,13 +40,10 @@ export default function MapLegend({ variant = 'view' }: { variant?: 'view' | 'ed
     { swatch: <Swatch color="#22c55e" shape="circle" />, label: 'Pulsing green ring', note: 'one of the 3 nearest available, during an alert' },
   ]
 
-  const alertRows: Row[] = [
-    { swatch: <Swatch color="#ef4444" shape="line" dashed />, label: 'Red dashed line', note: 'evacuation route to the assembly area' },
-  ]
-
-  const editorRows: Row[] = [
-    { swatch: <Swatch color="#facc15" />, label: 'Pulsing yellow glow', note: 'the building a new room will be added to — pick it from the "Building" dropdown first' },
-    { swatch: <Swatch color="#00c2ff" />, label: 'Blue outline', note: 'currently selected item — drag its corner to resize' },
+  const routeRows: Row[] = [
+    { swatch: <Swatch color="#22c55e" shape="line" dashed />, label: 'Green dashed line', note: 'standard route from a building to its assembly area (always shown)' },
+    { swatch: <Swatch color="#ef4444" shape="line" />, label: 'Red line', note: 'live route from the alerting room during an Orange/Red alert' },
+    { swatch: <Swatch color="#22c55e" dashed />, label: 'Glowing assembly area', note: 'the one you are being sent to during an alert' },
   ]
 
   return (
@@ -61,8 +58,7 @@ export default function MapLegend({ variant = 'view' }: { variant?: 'view' | 'ed
         <div style={{ padding: '2px 14px 14px', display: 'grid', gap: 14 }}>
           <Section title="Places" rows={placeRows} />
           <Section title="Extinguishers" rows={extRows} />
-          {variant === 'view' && <Section title="During an alert" rows={alertRows} />}
-          {variant === 'editor' && <Section title="Editing" rows={editorRows} />}
+          <Section title="Evacuation routes" rows={routeRows} />
         </div>
       )}
     </div>

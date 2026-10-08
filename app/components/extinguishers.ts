@@ -1,4 +1,4 @@
-import type { MapObject } from './MapEditor'
+import type { MapObject } from './mapTypes'
 
 // ─────────────────────────────────────────────────────────────
 // Everything about WHERE extinguishers are and WHICH ones to send people to.
