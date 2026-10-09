@@ -1,0 +1,229 @@
+diff --git a/app/components/Guidance.tsx b/app/components/Guidance.tsx
+index b0c51ce..cb9966f 100644
+--- a/app/components/Guidance.tsx
++++ b/app/components/Guidance.tsx
+@@ -21,10 +21,8 @@ export type GuidanceProps = {
+   building?: string
+   floor?: string
+   assemblyArea?: string | null
+-  routeSteps?: string[]       // turn-by-turn walk to the assembly area (same route drawn on the Campus Map)
+   nearest: NearestResult      // the 3 nearest AVAILABLE extinguishers to the alerting room (+ unavailable ones)
+   isResponder: boolean        // this user accepted the response request
+-  onRespond?: () => void      // opens the "Can you respond?" prompt
+ }
+ 
+ const EXT_USE: Record<string, { good: string; avoid: string }> = {
+@@ -117,20 +115,7 @@ function ExtinguisherPanel({ nearest, building, level }: { nearest: NearestResul
+   )
+ }
+ 
+-// "Which way do I walk?" — the same route the Campus Map draws as a red line.
+-function RouteBox({ steps, color, assemblyArea }: { steps: string[]; color: string; assemblyArea?: string | null }) {
+-  return (
+-    <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: `${color}10`, border: `1px solid ${color}40` }}>
+-      <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: 1, color, textTransform: 'uppercase', marginBottom: 8 }}>
+-        🧭 Your way out{assemblyArea ? ` → ${assemblyArea}` : ''}
+-      </div>
+-      <Steps items={steps.map(t => ({ t }))} color={color} />
+-      <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--muted)' }}>The same route is drawn as a red line on the Campus Map.</div>
+-    </div>
+-  )
+-}
+-
+-export default function GuidanceCard({ level, location, building, floor, assemblyArea, routeSteps, nearest, isResponder, onRespond }: GuidanceProps) {
++export default function GuidanceCard({ level, location, building, floor, assemblyArea, nearest, isResponder }: GuidanceProps) {
+   const isRed = level === 'Red'
+   const color = isRed ? '#ef4444' : '#f97316'
+   const [tab, setTab] = useState<'evacuate' | 'respond'>(isResponder ? 'respond' : 'evacuate')
+@@ -187,7 +172,6 @@ export default function GuidanceCard({ level, location, building, floor, assembl
+ 
+           {tab === 'evacuate' && (
+             <>
+-              {routeSteps && routeSteps.length > 0 && <RouteBox steps={routeSteps} color={color} assemblyArea={assemblyArea} />}
+               <Steps items={evacSteps} color={color} />
+               {isRed && (
+                 <Note color={color}>
+@@ -236,14 +220,6 @@ export default function GuidanceCard({ level, location, building, floor, assembl
+             </>
+           )}
+ 
+-          {!isResponder && onRespond && (
+-            <div style={{ marginTop: 14 }}>
+-              <button onClick={onRespond}
+-                style={{ padding: '8px 16px', borderRadius: 6, border: `1px solid ${color}`, background: 'transparent', color, fontSize: '.78rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+-                I can respond or assist
+-              </button>
+-            </div>
+-          )}
+         </div>
+       )}
+     </div>
+diff --git a/app/components/HelpGuide.tsx b/app/components/HelpGuide.tsx
+index f08e047..76a839a 100644
+--- a/app/components/HelpGuide.tsx
++++ b/app/components/HelpGuide.tsx
+@@ -89,7 +89,7 @@ function ReadingMap() {
+       <H>Reading the campus map</H>
+       <P>The map is a scale layout of campus: colored blocks are buildings and rooms, and everything else (walls, gates, trees, extinguishers) is drawn on top. Hover or tap a sensor 📡 or extinguisher 🧯 to see its details.</P>
+       <Step n={1}>Find your building. Medina Lacson, COAS and CAHS are the three with labeled rooms and sensors.</Step>
+-      <Step n={2}>Find the <strong>green dashed line</strong> leaving your building. It always shows the way from the building's <strong>EXIT</strong> door to its assembly area — you can learn it before an emergency.</Step>
++      <Step n={2}>Find the <strong>green dashed line</strong> leaving your building. It always shows the way from your building to its assembly area — you can learn it before an emergency.</Step>
+       <Step n={3}>The line stops at the edge of the assembly area (Zone 2 or Zone 3). You do not need to walk to the middle — once you are inside the dashed green box, you have arrived.</Step>
+       <MapLegend />
+       <P style={{ marginTop: 12 }}>The key under the map shows the same symbols, so you don't need to reopen this guide while looking at it.</P>
+@@ -103,10 +103,9 @@ function Alerts() {
+       <H>Alerts and evacuation</H>
+       <Step n={1}><strong>🟠 Orange</strong> — a possible small fire was detected. Stay alert; responders are asked to check it.</Step>
+       <Step n={2}><strong>🔴 Red</strong> — critical. Evacuate immediately to your assembly area.</Step>
+-      <Step n={3}>When an alert is active, a card appears at the top of the page with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you tapped "I can respond or assist").</Step>
+-      <Step n={4}>The Evacuating tab starts with <strong>🧭 Your way out</strong>: short directions from the room that is alerting to the assembly area, followed by the general safety steps.</Step>
+-      <Step n={5}>The card also lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
+-      <Step n={6}>On the Campus Map, the <strong>red line</strong> shows the walk from the alerting room, out the building's EXIT door, to the assembly area. That assembly area glows green, and the recommended extinguishers pulse green.</Step>
++      <Step n={3}>When an alert is active, a card appears at the top of the page with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you accepted the response request).</Step>
++      <Step n={4}>The card also lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
++      <Step n={5}>On the Campus Map, the <strong>red line</strong> shows the walk from the alerting room to the assembly area. That assembly area glows green, and the recommended extinguishers pulse green.</Step>
+     </>
+   )
+ }
+diff --git a/app/components/MapLegend.tsx b/app/components/MapLegend.tsx
+index 2794c9f..c067a45 100644
+--- a/app/components/MapLegend.tsx
++++ b/app/components/MapLegend.tsx
+@@ -30,7 +30,6 @@ export default function MapLegend() {
+     { swatch: <Swatch color="#22c55e" />, label: 'Gate' },
+     { swatch: <Swatch color="#16a34a" />, label: 'Trees / green area' },
+     { swatch: <Swatch color="#22c55e" dashed />, label: 'Assembly Area (Zone 2 / Zone 3)', note: 'where everyone gathers' },
+-    { swatch: <Swatch color="#22c55e" />, label: 'EXIT door', note: 'where routes leave a building' },
+   ]
+ 
+   const extRows: Row[] = [
+diff --git a/app/components/campusRoutes.ts b/app/components/campusRoutes.ts
+index be7db8e..68a66ed 100644
+--- a/app/components/campusRoutes.ts
++++ b/app/components/campusRoutes.ts
+@@ -2,7 +2,7 @@
+ // Hand-drawn evacuation routes for the (fixed) campus map.
+ //
+ // Every route follows the same easy-to-read pattern:
+-//   room  →  hallway  →  building exit door  →  walkway  →  EDGE of the assembly area
++//   room  →  hallway  →  open walkway  →  EDGE of the assembly area
+ //
+ // Routes are made only of straight horizontal / vertical legs (no diagonals), they stay on
+ // the open ground between buildings, and they STOP just inside the edge of the assembly
+@@ -98,13 +98,10 @@ export function getEvacRoute(
+   const steps = [
+     `Leave ${room || 'your room'} and walk to ${cfg.hallway}.`,
+     ...(upstairs ? [`Take the stairs down from ${floor} to the ground floor (never the elevator).`] : []),
+-    `Go out through ${cfg.exitText}.`,
+     cfg.walkText,
+     'Stay in the assembly area and wait for the headcount. Do not go back inside.',
+   ]
+   return { zoneId: cfg.zone, zoneName: ZONE_NAMES[cfg.zone], points: pts, exit: { x: exit.x, y: exit.doorY }, steps }
+ }
+ 
+-/** Door markers to draw on the map. */
+-export const EXIT_DOORS = Object.values(ROUTES).flatMap(r => r.exits.map(e => ({ x: e.x, y: e.doorY, label: e.label })))
+ export const BUILDING_NAMES = Object.keys(ROUTES)
+diff --git a/app/dashboard/page.tsx b/app/dashboard/page.tsx
+index af12709..686628f 100644
+--- a/app/dashboard/page.tsx
++++ b/app/dashboard/page.tsx
+@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
+ import type { MapObject } from '../components/mapTypes'
+ import HelpGuide from '../components/HelpGuide'
+ import { nearestExtinguishers } from '../components/extinguishers'
+-import { getEvacRoute, EXIT_DOORS, ZONE2, ZONE3 } from '../components/campusRoutes'
++import { getEvacRoute, ZONE2, ZONE3 } from '../components/campusRoutes'
+ import GuidanceCard from '../components/Guidance'
+ 
+ const SESSION_KEY     = 'ag_user'
+@@ -684,7 +684,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
+           )
+         })()}
+ 
+-        {/* Evacuation route (hand-drawn, see components/campusRoutes.ts). Room → hallway → exit door →
++        {/* Evacuation route (hand-drawn, see components/campusRoutes.ts). Room → hallway →
+             walkway → EDGE of the assembly area, using only straight horizontal/vertical legs, so it never
+             cuts through a building or runs across the assembly area. Only drawn while there's an active
+             Orange/Red alert, for that specific room — the map stays uncluttered the rest of the time. */}
+@@ -704,14 +704,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
+           </marker>
+         </defs>
+ 
+-        {/* Building exit doors — where every evacuation route leaves the building */}
+-        {EXIT_DOORS.map((d,i)=>(
+-          <g key={`exit-${i}`} style={{pointerEvents:'none'}}>
+-            <rect x={d.x-9} y={d.y-3} width={18} height={6} rx={2} fill="#22c55e" stroke="#0d1421" strokeWidth={1}/>
+-            <text x={d.x} y={d.y+2} textAnchor="middle" fontSize={4.5} fill="#04210f" fontFamily="monospace" fontWeight="bold">{d.label}</text>
+-          </g>
+-        ))}
+-
+         {/* Fire extinguishers — rendered from live equipment data */}
+         {equipment.map(e=>{
+           const pos=getExtPos(e.building, e.floor, e.location_description)
+@@ -793,7 +785,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
+         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.1)',border:'1px solid #22c55e'}}/> 🚩 Assembly Area (Zone 2 / Zone 3)</div>
+         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:0,borderTop:'2px dashed #22c55e'}}/> Standard evacuation route (building → assembly area)</div>
+         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#ef4444'}}/> Live route during an alert</div>
+-        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:6,borderRadius:2,background:'#22c55e'}}/> EXIT door</div>
+       </div>
+     </div>
+   )
+@@ -1324,6 +1315,19 @@ function declineResponse() {
+   // Same hand-drawn route the map draws, so the guidance names the assembly area and the exit the red line really uses.
+   const activeRoute=activeEvacDevice?getEvacRoute(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room,getRoomPos(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room)):null
+ 
++  // Can this user still accept the response request? (false once they've accepted, or when all slots are full)
++  const canRespond=!!respStatus&&!!respDeviceRef.current&&!myResponses.has(respDeviceRef.current.device_id)&&!respStatus.full
++  const respondRow=(
++    <div role={canRespond?'button':undefined} tabIndex={canRespond?0:undefined}
++         onClick={()=>{if(canRespond)setRespManualOpen(true)}}
++         onKeyDown={e=>{if(canRespond&&(e.key==='Enter'||e.key===' ')){e.preventDefault();setRespManualOpen(true)}}}
++         title={canRespond?"Tap if you'd like to respond":undefined}
++         style={{display:'inline-flex',alignItems:'center',gap:12,cursor:canRespond?'pointer':'default'}}>
++      <ResponderAvatars responders={respStatus?.responders||[]} limit={respStatus?.limit||0}/>
++      {canRespond&&<span style={{fontSize:'.72rem',fontWeight:700,textDecoration:'underline',color:'inherit'}}>Tap to respond</span>}
++    </div>
++  )
++
+   const navItems=[
+      {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
+     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
+@@ -1479,24 +1483,13 @@ function declineResponse() {
+               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:respStatus?10:0}}>
+                 🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
+               </div>
+-                            {respStatus&&respStatus.limit>0&&(
+-                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+-                     style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+-                                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+-                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+-                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+-              </div>
+-                </div>
+-              )}
++              {respStatus&&respStatus.limit>0&&respondRow}
+             </div>
+           )}
+           {!redInc&&activeEvacDevice&&respStatus&&respStatus.limit>0&&(
+             <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:8,padding:'10px 16px',marginBottom:16}}>
+               <div style={{fontSize:'.78rem',color:'var(--orange)',marginBottom:10}}>🟠 <strong>Orange Alert</strong> — {activeEvacInc?.location}. Response requested.</div>
+-                            <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
+-                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
+-                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
+-              </div>
++              {respondRow}
+             </div>
+           )}
+           {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&(respManualOpen||respDismissedFor[respDeviceRef.current?.device_id||'']===undefined||respDismissedFor[respDeviceRef.current?.device_id||'']<respStatus.limit)&&(
+@@ -1556,10 +1549,8 @@ function declineResponse() {
+               building={activeEvacDevice.building}
+               floor={activeEvacDevice.floor}
+               assemblyArea={activeRoute?.zoneName||null}
+-              routeSteps={activeRoute?.steps}
+               nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment})}
+               isResponder={myResponses.has(activeEvacDevice.device_id)}
+-              onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
+             />
+           )}
+ 

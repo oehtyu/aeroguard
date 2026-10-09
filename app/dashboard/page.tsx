@@ -1315,6 +1315,19 @@ function declineResponse() {
   // Same hand-drawn route the map draws, so the guidance names the assembly area and the exit the red line really uses.
   const activeRoute=activeEvacDevice?getEvacRoute(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room,getRoomPos(activeEvacDevice.building,activeEvacDevice.floor,activeEvacDevice.room)):null
 
+  // Can this user still accept the response request? (false once they've accepted, or when all slots are full)
+  const canRespond=!!respStatus&&!!respDeviceRef.current&&!myResponses.has(respDeviceRef.current.device_id)&&!respStatus.full
+  const respondRow=(
+    <div role={canRespond?'button':undefined} tabIndex={canRespond?0:undefined}
+         onClick={()=>{if(canRespond)setRespManualOpen(true)}}
+         onKeyDown={e=>{if(canRespond&&(e.key==='Enter'||e.key===' ')){e.preventDefault();setRespManualOpen(true)}}}
+         title={canRespond?"Tap if you'd like to respond":undefined}
+         style={{display:'inline-flex',alignItems:'center',gap:12,cursor:canRespond?'pointer':'default'}}>
+      <ResponderAvatars responders={respStatus?.responders||[]} limit={respStatus?.limit||0}/>
+      {canRespond&&<span style={{fontSize:'.72rem',fontWeight:700,textDecoration:'underline',color:'inherit'}}>Tap to respond</span>}
+    </div>
+  )
+
   const navItems=[
      {id:'dashboard',icon:'📊',label:'Dashboard',section:'Monitor'},
     {id:'map',icon:'🗺️',label:'Campus Map',section:''},
@@ -1470,24 +1483,13 @@ function declineResponse() {
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:respStatus?10:0}}>
                 🚨 <strong>CRITICAL ALERT:</strong>&nbsp;Red level — {redInc.location}. Evacuation protocols active.
               </div>
-                            {respStatus&&respStatus.limit>0&&(
-                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
-                     style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
-                                <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
-                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
-                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
-              </div>
-                </div>
-              )}
+              {respStatus&&respStatus.limit>0&&respondRow}
             </div>
           )}
           {!redInc&&activeEvacDevice&&respStatus&&respStatus.limit>0&&(
             <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:8,padding:'10px 16px',marginBottom:16}}>
               <div style={{fontSize:'.78rem',color:'var(--orange)',marginBottom:10}}>🟠 <strong>Orange Alert</strong> — {activeEvacInc?.location}. Response requested.</div>
-                            <div onClick={()=>{if(!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full)setRespManualOpen(true)}}
-                   style={{cursor:!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full?'pointer':'default'}} title="Tap if you'd like to respond">
-                <ResponderAvatars responders={respStatus.responders} limit={respStatus.limit}/>
-              </div>
+              {respondRow}
             </div>
           )}
           {respStatus&&!myResponses.has(respDeviceRef.current?.device_id||'')&&!respStatus.full&&(respManualOpen||respDismissedFor[respDeviceRef.current?.device_id||'']===undefined||respDismissedFor[respDeviceRef.current?.device_id||'']<respStatus.limit)&&(
