@@ -41,7 +41,7 @@ const ROUTES: Record<string, BuildingRoute> = {
   'Medina Lacson Building': {
     zone: 'zone2',
     exits: [{ x: 356, doorY: 231, label: 'EXIT' }, { x: 454, doorY: 231, label: 'EXIT' }],
-    defaultStart: p(356, 187),
+    defaultStart: p(404, 191), // building's geometric center (246-563, 152-231), not pinned to one exit
     after: (e) => [p(e.x, ZONE2.y + ARRIVE)],
     hallway: 'the main hallway between the room columns',
     exitText: 'the south exit (the side facing the quadrangle)',
@@ -52,7 +52,7 @@ const ROUTES: Record<string, BuildingRoute> = {
   'COAS Building': {
     zone: 'zone2',
     exits: [{ x: 57, doorY: 375, label: 'EXIT' }, { x: 110, doorY: 375, label: 'EXIT' }],
-    defaultStart: p(57, 400),
+    defaultStart: p(83, 400), // building's geometric center (0-166, 375-424), not pinned to one exit
     after: (e, y) => [p(e.x, 350), p(290, 350), p(290, ZONE2.y + ZONE2.h - ARRIVE)],
     hallway: 'the hallway between the rooms',
     exitText: 'the north exit (facing the quadrangle)',
@@ -63,7 +63,7 @@ const ROUTES: Record<string, BuildingRoute> = {
   'CAHS Building': {
     zone: 'zone3',
     exits: [{ x: 707, doorY: 116, label: 'EXIT' }, { x: 790, doorY: 116, label: 'EXIT' }],
-    defaultStart: p(790, 75),
+    defaultStart: p(747, 74), // building's geometric center (622-873, 33-116), not pinned to one exit
     after: (e) => [p(e.x, 134), p(855, 134), p(855, ZONE3.y + ARRIVE)],
     hallway: 'the main hallway',
     exitText: 'the south exit',

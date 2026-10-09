@@ -189,7 +189,6 @@ function evacRoom(buildingName: string, floor: string | undefined, room: string)
   return EVAC_OBJECTS.find(o => o.object_type === 'room' && o.parent_id === b.map_object_id && o.name === room && (!floor || !o.floor || o.floor === floor)) || null
 }
 // Each building's standard route to its assembly area — the permanent green dashed lines on the map.
-const REFERENCE_ROUTES = BUILDINGS.map(b => ({ building: b.name, route: getEvacRoute(b.name) }))
 const svgPoints = (pts: { cx:number; cy:number }[]) => pts.map(p => `${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')
 
 const ROOMS_BY_BUILDING: Record<string, { floor:string; room:string; label:string }[]> = {
@@ -685,23 +684,10 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           )
         })()}
 
-        {/* Evacuation routes (hand-drawn, see components/campusRoutes.ts). Every route is room → hallway →
-            exit door → walkway → EDGE of the assembly area, using only straight horizontal/vertical legs,
-            so it never cuts through a building or runs across the assembly area.
-            Green = standard route for each building (always shown); red = the live route for the room
-            that is alerting right now. */}
-        {REFERENCE_ROUTES.map(r=>{
-          if(!r.route) return null
-          const isActive=activePlan&&activeEvacDevice?.building===r.building
-          if(isActive) return null // drawn separately below, on top, from the room-specific route
-          return (
-            <g key={r.building}>
-              <polyline points={svgPoints(r.route.points)} fill="none" stroke="#22c55e" strokeWidth={5} opacity={0.18} strokeLinejoin="round" strokeLinecap="round"/>
-              <polyline points={svgPoints(r.route.points)} fill="none" stroke="#22c55e" strokeWidth={2.5}
-                        strokeDasharray="7 5" opacity={0.9} markerEnd="url(#evacArrow)" strokeLinejoin="round"/>
-            </g>
-          )
-        })}
+        {/* Evacuation route (hand-drawn, see components/campusRoutes.ts). Room → hallway → exit door →
+            walkway → EDGE of the assembly area, using only straight horizontal/vertical legs, so it never
+            cuts through a building or runs across the assembly area. Only drawn while there's an active
+            Orange/Red alert, for that specific room — the map stays uncluttered the rest of the time. */}
         {activePlan&&(
           <g>
             <polyline points={svgPoints(activePlan.points)} fill="none" stroke="#ef4444" strokeWidth={8} opacity={0.25} strokeLinejoin="round" strokeLinecap="round"/>
