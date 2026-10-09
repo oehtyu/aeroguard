@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import type { MapObject } from '../components/mapTypes'
 import HelpGuide from '../components/HelpGuide'
 import { nearestExtinguishers } from '../components/extinguishers'
-import { getEvacRoute, EXIT_DOORS, ZONE2, ZONE3 } from '../components/campusRoutes'
+import { getEvacRoute, ZONE2, ZONE3 } from '../components/campusRoutes'
 import GuidanceCard from '../components/Guidance'
 
 const SESSION_KEY     = 'ag_user'
@@ -684,7 +684,7 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
           )
         })()}
 
-        {/* Evacuation route (hand-drawn, see components/campusRoutes.ts). Room → hallway → exit door →
+        {/* Evacuation route (hand-drawn, see components/campusRoutes.ts). Room → hallway →
             walkway → EDGE of the assembly area, using only straight horizontal/vertical legs, so it never
             cuts through a building or runs across the assembly area. Only drawn while there's an active
             Orange/Red alert, for that specific room — the map stays uncluttered the rest of the time. */}
@@ -703,14 +703,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
             <path d="M1 1L9 5L1 9Z" fill="#ef4444"/>
           </marker>
         </defs>
-
-        {/* Building exit doors — where every evacuation route leaves the building */}
-        {EXIT_DOORS.map((d,i)=>(
-          <g key={`exit-${i}`} style={{pointerEvents:'none'}}>
-            <rect x={d.x-9} y={d.y-3} width={18} height={6} rx={2} fill="#22c55e" stroke="#0d1421" strokeWidth={1}/>
-            <text x={d.x} y={d.y+2} textAnchor="middle" fontSize={4.5} fill="#04210f" fontFamily="monospace" fontWeight="bold">{d.label}</text>
-          </g>
-        ))}
 
         {/* Fire extinguishers — rendered from live equipment data */}
         {equipment.map(e=>{
@@ -793,7 +785,6 @@ function CampusMap({devices,incidents,equipment}:{devices:any[],incidents:any[],
         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,borderRadius:2,background:'rgba(34,197,94,0.1)',border:'1px solid #22c55e'}}/> 🚩 Assembly Area (Zone 2 / Zone 3)</div>
         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:0,borderTop:'2px dashed #22c55e'}}/> Standard evacuation route (building → assembly area)</div>
         <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#ef4444'}}/> Live route during an alert</div>
-        <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:6,borderRadius:2,background:'#22c55e'}}/> EXIT door</div>
       </div>
     </div>
   )
@@ -1556,10 +1547,8 @@ function declineResponse() {
               building={activeEvacDevice.building}
               floor={activeEvacDevice.floor}
               assemblyArea={activeRoute?.zoneName||null}
-              routeSteps={activeRoute?.steps}
               nearest={nearestExtinguishers({buildingName:activeEvacDevice.building,floor:activeEvacDevice.floor,room:activeRoomObj,objects:EVAC_OBJECTS,equipment})}
               isResponder={myResponses.has(activeEvacDevice.device_id)}
-              onRespond={respStatus&&!respStatus.full&&!myResponses.has(activeEvacDevice.device_id)?()=>setRespManualOpen(true):undefined}
             />
           )}
 

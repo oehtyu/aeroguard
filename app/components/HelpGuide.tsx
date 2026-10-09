@@ -89,7 +89,7 @@ function ReadingMap() {
       <H>Reading the campus map</H>
       <P>The map is a scale layout of campus: colored blocks are buildings and rooms, and everything else (walls, gates, trees, extinguishers) is drawn on top. Hover or tap a sensor 📡 or extinguisher 🧯 to see its details.</P>
       <Step n={1}>Find your building. Medina Lacson, COAS and CAHS are the three with labeled rooms and sensors.</Step>
-      <Step n={2}>Find the <strong>green dashed line</strong> leaving your building. It always shows the way from the building's <strong>EXIT</strong> door to its assembly area — you can learn it before an emergency.</Step>
+      <Step n={2}>Find the <strong>green dashed line</strong> leaving your building. It always shows the way from your building to its assembly area — you can learn it before an emergency.</Step>
       <Step n={3}>The line stops at the edge of the assembly area (Zone 2 or Zone 3). You do not need to walk to the middle — once you are inside the dashed green box, you have arrived.</Step>
       <MapLegend />
       <P style={{ marginTop: 12 }}>The key under the map shows the same symbols, so you don't need to reopen this guide while looking at it.</P>
@@ -103,10 +103,9 @@ function Alerts() {
       <H>Alerts and evacuation</H>
       <Step n={1}><strong>🟠 Orange</strong> — a possible small fire was detected. Stay alert; responders are asked to check it.</Step>
       <Step n={2}><strong>🔴 Red</strong> — critical. Evacuate immediately to your assembly area.</Step>
-      <Step n={3}>When an alert is active, a card appears at the top of the page with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you tapped "I can respond or assist").</Step>
-      <Step n={4}>The Evacuating tab starts with <strong>🧭 Your way out</strong>: short directions from the room that is alerting to the assembly area, followed by the general safety steps.</Step>
-      <Step n={5}>The card also lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
-      <Step n={6}>On the Campus Map, the <strong>red line</strong> shows the walk from the alerting room, out the building's EXIT door, to the assembly area. That assembly area glows green, and the recommended extinguishers pulse green.</Step>
+      <Step n={3}>When an alert is active, a card appears at the top of the page with two tabs: <strong>Evacuating</strong> (what to do if you're leaving) and <strong>Responding</strong> (what to do if you accepted the response request).</Step>
+      <Step n={4}>The card also lists the 3 nearest available fire extinguishers, with what each one is safe to use on. Extinguishers under Maintenance or Expired are never suggested.</Step>
+      <Step n={5}>On the Campus Map, the <strong>red line</strong> shows the walk from the alerting room to the assembly area. That assembly area glows green, and the recommended extinguishers pulse green.</Step>
     </>
   )
 }

@@ -2,7 +2,7 @@
 // Hand-drawn evacuation routes for the (fixed) campus map.
 //
 // Every route follows the same easy-to-read pattern:
-//   room  →  hallway  →  building exit door  →  walkway  →  EDGE of the assembly area
+//   room  →  hallway  →  open walkway  →  EDGE of the assembly area
 //
 // Routes are made only of straight horizontal / vertical legs (no diagonals), they stay on
 // the open ground between buildings, and they STOP just inside the edge of the assembly
@@ -98,13 +98,10 @@ export function getEvacRoute(
   const steps = [
     `Leave ${room || 'your room'} and walk to ${cfg.hallway}.`,
     ...(upstairs ? [`Take the stairs down from ${floor} to the ground floor (never the elevator).`] : []),
-    `Go out through ${cfg.exitText}.`,
     cfg.walkText,
     'Stay in the assembly area and wait for the headcount. Do not go back inside.',
   ]
   return { zoneId: cfg.zone, zoneName: ZONE_NAMES[cfg.zone], points: pts, exit: { x: exit.x, y: exit.doorY }, steps }
 }
 
-/** Door markers to draw on the map. */
-export const EXIT_DOORS = Object.values(ROUTES).flatMap(r => r.exits.map(e => ({ x: e.x, y: e.doorY, label: e.label })))
 export const BUILDING_NAMES = Object.keys(ROUTES)

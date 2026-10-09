@@ -30,7 +30,6 @@ export default function MapLegend() {
     { swatch: <Swatch color="#22c55e" />, label: 'Gate' },
     { swatch: <Swatch color="#16a34a" />, label: 'Trees / green area' },
     { swatch: <Swatch color="#22c55e" dashed />, label: 'Assembly Area (Zone 2 / Zone 3)', note: 'where everyone gathers' },
-    { swatch: <Swatch color="#22c55e" />, label: 'EXIT door', note: 'where routes leave a building' },
   ]
 
   const extRows: Row[] = [
